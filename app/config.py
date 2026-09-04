@@ -25,8 +25,18 @@ class Settings(BaseSettings):
     # Base URL used to build the link inside magic-link emails
     app_base_url: str = "http://localhost:8000"
 
+    # Optional — SMS notifications are skipped entirely if any of these
+    # are unset. Not required for the app to run.
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
+    twilio_phone_number: str | None = None
+
     class Config:
         env_file = ".env"
+
+    @property
+    def twilio_configured(self) -> bool:
+        return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_phone_number)
 
     @property
     def database_url(self) -> str:

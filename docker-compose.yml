@@ -36,6 +36,7 @@ services:
       - "8000:8000"
     volumes:
       - ./app:/app/app  # live-reload during dev; remove for production builds
+      - ./frontend:/app/frontend
       - ./alembic.ini:/app/alembic.ini
       - ./migrations:/app/migrations
     networks:

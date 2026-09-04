@@ -10,6 +10,8 @@ from sqlalchemy import (
     ForeignKey,
     Enum,
     LargeBinary,
+    Boolean,
+    Integer,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
@@ -28,8 +30,15 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String, unique=True, nullable=False, index=True)
+    # Not unique — a household can share one inbox across two accounts
+    # (e.g. husband and wife). username (below) is the actual unique
+    # sign-in identifier; email is just where mail goes.
+    email = Column(String, nullable=True, index=True)
+    username = Column(String, unique=True, nullable=True, index=True)  # required before password sign-in works
+    password_hash = Column(String, nullable=True)  # bcrypt hash; null until the user completes setup
+    full_name = Column(String, nullable=True)  # self-managed, plain text — like email, not client PII
     role = Column(Enum(Role), nullable=False, default=Role.VOLUNTEER)
+    is_active = Column(Boolean, nullable=False, default=True)  # a manual on/off switch, independent of TEAMMEMBER term dates
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Term limits — required for TEAMMEMBER (church-appointed terms),
@@ -42,6 +51,13 @@ class User(Base):
     # Set once the invitation magic-link email has actually been sent,
     # so the scheduled job never sends it twice.
     invitation_sent_at = Column(DateTime, nullable=True)
+
+    # Self-managed notification preferences — this is the user's own
+    # operational contact info (not client PII), so it's stored plainly
+    # like email, not encrypted/RBAC-gated.
+    phone_number = Column(String, nullable=True)
+    notify_email = Column(Boolean, nullable=False, default=True)
+    notify_sms = Column(Boolean, nullable=False, default=False)
 
 
 class MagicLinkToken(Base):
@@ -58,8 +74,9 @@ class Identity(Base):
     """
     Holds the actual person record. Every PII field is stored as
     encrypted bytes (application-layer encryption via Fernet, on top
-    of the SSL-encrypted connection). Only ADMIN/CASEWORKER-role code
-    paths should ever call the decrypt helper on these columns.
+    of the SSL-encrypted connection). Only ADMIN (while elevated) or
+    TEAMMEMBER code paths should ever call the decrypt helper on these
+    columns.
     """
     __tablename__ = "identities"
 
@@ -78,6 +95,8 @@ class Identity(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     activities = relationship("ActivityRecord", back_populates="identity")
+    addresses = relationship("Address", back_populates="identity", order_by="Address.effective_date")
+    household_members = relationship("HouseholdMember", back_populates="identity")
 
 
 class ActivityRecord(Base):
@@ -87,6 +106,12 @@ class ActivityRecord(Base):
     this table directly and see identity_id (a UUID) but nothing that
     resolves it to a name without going through the Identity table,
     which their role is not permitted to decrypt.
+
+    An activity can also represent something scheduled for the future
+    (status="scheduled", amount_spent still null) rather than something
+    already done (status="completed"). scheduled_at carries the precise
+    date+time when future notification timing matters; activity_date
+    remains the plain date used for ledger grouping either way.
     """
     __tablename__ = "activity_records"
 
@@ -95,10 +120,20 @@ class ActivityRecord(Base):
     activity_date = Column(Date, nullable=False, default=date.today)
     amount_spent = Column(Numeric(10, 2), nullable=True)
     category = Column(String, nullable=True)  # e.g. "groceries", "utilities", "rent"
+
+    # Encrypted like Identity's PII fields — may describe a client's
+    # situation, so it's gated by the same can_decrypt_pii check.
+    encrypted_notes = Column(LargeBinary, nullable=True)
+
+    status = Column(String, nullable=False, default="completed")  # "scheduled" | "completed" | "cancelled"
+    scheduled_at = Column(DateTime, nullable=True)  # precise date+time, only meaningful when status="scheduled"
+
     logged_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     identity = relationship("Identity", back_populates="activities")
+    assignments = relationship("ActivityAssignment", back_populates="activity")
+    notification_rules = relationship("NotificationRule", back_populates="activity")
 
 
 class ElevationGrant(Base):
@@ -168,3 +203,88 @@ class OrgSettings(Base):
     logo_content_type = Column(String, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+
+class Address(Base):
+    """
+    One row per address a person has had — append-only, never edited or
+    deleted. The "current" address is simply the row with the latest
+    effective_date. This gives a full move history (with dates) for
+    free, rather than overwriting a single address field.
+    """
+    __tablename__ = "addresses"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    identity_id = Column(UUID(as_uuid=True), ForeignKey("identities.id"), nullable=False, index=True)
+    encrypted_address = Column(LargeBinary, nullable=False)
+    effective_date = Column(Date, nullable=False, default=date.today)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    identity = relationship("Identity", back_populates="addresses")
+
+
+class ActivityAssignment(Base):
+    """Which team members are assigned to a given activity (usually a scheduled one)."""
+    __tablename__ = "activity_assignments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity_records.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    activity = relationship("ActivityRecord", back_populates="assignments")
+
+
+class NotificationRule(Base):
+    """
+    One 'notify this many minutes before scheduled_at' rule for an
+    activity. An activity can have several — e.g. one rule for a week
+    before, one for a day before, one for an hour before — fully
+    flexible, not limited to any fixed set.
+    """
+    __tablename__ = "notification_rules"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity_records.id"), nullable=False, index=True)
+    offset_minutes = Column(Integer, nullable=False)  # e.g. 60 = "1 hour before", 1440 = "1 day before"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    activity = relationship("ActivityRecord", back_populates="notification_rules")
+
+
+class NotificationSend(Base):
+    """
+    Idempotency log — one row per (rule, recipient, channel) actually
+    sent, so the scheduler never double-sends the same notification.
+    """
+    __tablename__ = "notification_sends"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    notification_rule_id = Column(UUID(as_uuid=True), ForeignKey("notification_rules.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    channel = Column(String, nullable=False)  # "email" | "sms"
+    status = Column(String, nullable=False)  # "sent" | "failed"
+    error_detail = Column(String, nullable=True)
+    sent_at = Column(DateTime, default=datetime.utcnow)
+
+
+class HouseholdMember(Base):
+    """
+    A child or other adult living with the applicant — from the intake
+    form's household section. Name and relationship are encrypted like
+    the rest of Identity's PII; age is a plain integer since it isn't
+    identifying on its own. Household totals (adults/children/total)
+    are always computed from these rows plus the applicant themself —
+    never stored, so there's nothing to drift out of sync.
+    """
+    __tablename__ = "household_members"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    identity_id = Column(UUID(as_uuid=True), ForeignKey("identities.id"), nullable=False, index=True)
+    member_type = Column(String, nullable=False)  # "child" | "adult"
+    encrypted_name = Column(LargeBinary, nullable=False)
+    age = Column(Integer, nullable=True)
+    encrypted_relationship = Column(LargeBinary, nullable=True)  # e.g. "daughter", "spouse", "roommate"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    identity = relationship("Identity", back_populates="household_members")

@@ -4,6 +4,15 @@ from email.message import EmailMessage
 from app.config import settings
 
 
+class EmailSendError(Exception):
+    """Raised when an email genuinely fails to send (bad recipient, auth failure, etc.)."""
+    pass
+
+
+def send_notification_email(to_email: str, subject: str, body: str) -> None:
+    _send(to_email, subject=subject, body=body)
+
+
 def send_magic_link_email(to_email: str, link: str) -> None:
     _send(
         to_email,
@@ -36,7 +45,14 @@ def _send(to_email: str, subject: str, body: str) -> None:
     msg["To"] = to_email
     msg.set_content(body)
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-        server.starttls()
-        server.login(settings.smtp_username, settings.smtp_password)
-        server.send_message(msg)
+    try:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+            server.starttls()
+            server.login(settings.smtp_username, settings.smtp_password)
+            server.send_message(msg)
+    except smtplib.SMTPRecipientsRefused:
+        raise EmailSendError(f"The mail server rejected the recipient address: {to_email}")
+    except smtplib.SMTPAuthenticationError:
+        raise EmailSendError("SMTP authentication failed — check SMTP_USERNAME/SMTP_PASSWORD")
+    except smtplib.SMTPException as e:
+        raise EmailSendError(f"Failed to send email: {e}")

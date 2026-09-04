@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy import create_engine, text
 
 from app.config import settings
@@ -8,6 +10,7 @@ from app.identities import router as identities_router
 from app.activities import router as activities_router
 from app.users import router as users_router
 from app.org_settings import router as org_settings_router
+from app.people import router as people_router
 from app.scheduler import start_scheduler
 
 app = FastAPI(title="Ministry Client Tracking System")
@@ -17,6 +20,21 @@ app.include_router(identities_router)
 app.include_router(activities_router)
 app.include_router(users_router)
 app.include_router(org_settings_router)
+app.include_router(people_router)
+
+app.mount("/static", StaticFiles(directory="frontend"), name="static")
+
+
+@app.get("/")
+def serve_index():
+    return FileResponse("frontend/index.html")
+
+
+@app.get("/verify")
+def serve_verify():
+    # Same SPA shell — app.js checks the path and handles the token client-side.
+    return FileResponse("frontend/index.html")
+
 
 _scheduler = None
 
