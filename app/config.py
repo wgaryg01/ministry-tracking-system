@@ -16,6 +16,15 @@ class Settings(BaseSettings):
     # Used to sign magic-link tokens
     secret_key: str
 
+    smtp_host: str
+    smtp_port: int = 587
+    smtp_username: str
+    smtp_password: str
+    smtp_from: str
+
+    # Base URL used to build the link inside magic-link emails
+    app_base_url: str = "http://localhost:8000"
+
     class Config:
         env_file = ".env"
 
