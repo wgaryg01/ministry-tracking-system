@@ -1,0 +1,22 @@
+# Environment / secrets
+.env
+*.pem
+*.key
+db/certs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Docker
+*.log
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
