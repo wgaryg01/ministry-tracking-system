@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ministry_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/certs:/var/lib/postgresql/certs:ro
+      - ./db/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: >
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c ssl=on
+      -c ssl_cert_file=/var/lib/postgresql/certs/server.crt
+      -c ssl_key_file=/var/lib/postgresql/certs/server.key
+    ports:
+      - "127.0.0.1:5432:5432"  # bind to localhost only — not exposed externally
+    networks:
+      - ministry_net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ministry_app
+    restart: unless-stopped
+    depends_on:
+      - db
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app  # live-reload during dev; remove for production builds
+    networks:
+      - ministry_net
+
+networks:
+  ministry_net:
+    driver: bridge
+
+volumes:
+  pgdata:
