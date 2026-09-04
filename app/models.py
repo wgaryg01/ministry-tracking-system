@@ -151,3 +151,20 @@ class AuditLog(Base):
     resource_id = Column(String, nullable=True)
     details = Column(String, nullable=True)  # short free-text context, not PII
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class OrgSettings(Base):
+    """
+    Singleton row (there's only ever one) holding the ministry's display
+    name and logo. Editable only by ADMIN. The logo is stored as bytes
+    directly in Postgres — it rides along with normal DB backups rather
+    than needing a separate file-storage volume.
+    """
+    __tablename__ = "org_settings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ministry_name = Column(String, nullable=False, default="Ministry")
+    logo_data = Column(LargeBinary, nullable=True)
+    logo_content_type = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

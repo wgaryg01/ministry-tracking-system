@@ -7,6 +7,7 @@ from app.elevation import router as elevation_router
 from app.identities import router as identities_router
 from app.activities import router as activities_router
 from app.users import router as users_router
+from app.org_settings import router as org_settings_router
 from app.scheduler import start_scheduler
 
 app = FastAPI(title="Ministry Client Tracking System")
@@ -15,6 +16,7 @@ app.include_router(elevation_router)
 app.include_router(identities_router)
 app.include_router(activities_router)
 app.include_router(users_router)
+app.include_router(org_settings_router)
 
 _scheduler = None
 
