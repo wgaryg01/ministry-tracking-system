@@ -19,8 +19,8 @@ Base = declarative_base()
 
 
 class Role(str, enum.Enum):
-    ADMIN = "admin"          # can decrypt PII, manage org settings
-    CASEWORKER = "caseworker"  # can decrypt PII, log activity
+    ADMIN = "admin"            # manages org settings/users; does NOT decrypt PII by default
+    TEAMMEMBER = "teammember"  # can decrypt PII, logs activity — the role that actually works with client identities
     VOLUNTEER = "volunteer"    # sees activity totals + identity_id only, never PII
 
 
@@ -31,6 +31,17 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     role = Column(Enum(Role), nullable=False, default=Role.VOLUNTEER)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Term limits — required for TEAMMEMBER (church-appointed terms),
+    # unused for ADMIN/VOLUNTEER. Enforced at sign-in: a TEAMMEMBER
+    # outside their [term_start_date, term_end_date] window is denied,
+    # even mid-session.
+    term_start_date = Column(Date, nullable=True)
+    term_end_date = Column(Date, nullable=True)
+
+    # Set once the invitation magic-link email has actually been sent,
+    # so the scheduled job never sends it twice.
+    invitation_sent_at = Column(DateTime, nullable=True)
 
 
 class MagicLinkToken(Base):
@@ -88,3 +99,55 @@ class ActivityRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     identity = relationship("Identity", back_populates="activities")
+
+
+class ElevationGrant(Base):
+    """
+    A time-limited, reason-logged grant allowing an ADMIN to decrypt PII.
+    TEAMMEMBER users never need this — they can always decrypt.
+    VOLUNTEER users are never eligible for elevation.
+    """
+    __tablename__ = "elevation_grants"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    reason = Column(String, nullable=False)
+    granted_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+
+
+class PiiAccessLog(Base):
+    """
+    Records every time a PII field is actually decrypted and by whom —
+    separate from ElevationGrant, which only records that permission
+    was temporarily granted. This is the "who actually looked at what"
+    trail, regardless of which role or grant made it possible.
+    """
+    __tablename__ = "pii_access_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    identity_id = Column(UUID(as_uuid=True), ForeignKey("identities.id"), nullable=False)
+    accessed_at = Column(DateTime, default=datetime.utcnow)
+    via_elevation = Column(String, nullable=True)  # elevation_grants.id as string, or null if via TEAMMEMBER role
+
+
+class AuditLog(Base):
+    """
+    General audit trail for state-changing actions and auth events —
+    invitations, term changes, logins, elevation requests/revokes,
+    identity/activity creation. PII decrypts have their own dedicated
+    PiiAccessLog above (kept separate since it's checked on the hot
+    path of every identity lookup). Read/list endpoints are not
+    logged here currently.
+    """
+    __tablename__ = "audit_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # null for failed/anonymous events
+    action = Column(String, nullable=False)  # e.g. "user_invited", "login", "elevation_requested"
+    resource_type = Column(String, nullable=True)  # e.g. "identity", "user"
+    resource_id = Column(String, nullable=True)
+    details = Column(String, nullable=True)  # short free-text context, not PII
+    created_at = Column(DateTime, default=datetime.utcnow)
