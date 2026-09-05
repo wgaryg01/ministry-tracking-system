@@ -279,6 +279,15 @@ button.secondary:hover { background: #CBC2AC; }
   flex-shrink: 0;
 }
 
+.req-situation {
+  width: 100%;
+  color: var(--ink-soft);
+  margin: 6px 0 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.req-situation strong { color: var(--ink); }
+
 .header-user { position: relative; }
 .online-dropdown {
   position: absolute;

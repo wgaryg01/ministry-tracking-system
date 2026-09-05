@@ -1252,6 +1252,18 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
 
   card.appendChild(summaryRow);
 
+  let updateSituationDisplay = null;
+  if (!isHidden) {
+    const situationDisplay = el("div", { class: "lead req-situation" });
+    updateSituationDisplay = () => {
+      situationDisplay.innerHTML = "";
+      situationDisplay.appendChild(el("strong", { text: "Situation: " }));
+      situationDisplay.appendChild(document.createTextNode(req.situation_description || "\u2014"));
+    };
+    updateSituationDisplay();
+    card.appendChild(situationDisplay);
+  }
+
   const body = el("div", { class: "hidden" });
   card.appendChild(body);
 
@@ -1264,7 +1276,6 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     function renderDetailsDl() {
       detailsWrap.innerHTML = "";
       detailsWrap.appendChild(el("dl", {}, [
-        el("dt", { text: "Situation" }), el("dd", { text: req.situation_description || "\u2014" }),
         el("dt", { text: "Request received" }), el("dd", { text: req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014" }),
         el("dt", { text: "Helper" }), el("dd", { text: req.helper_name ? `${req.helper_name} \u2014 ${req.helper_contact || ""} (${req.helper_relationship || ""})` : "\u2014" }),
       ]));
@@ -1281,6 +1292,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
         if (editWrap.children.length === 0) {
           editWrap.appendChild(renderEditRequestForm(req, () => {
             renderDetailsDl();
+            if (updateSituationDisplay) updateSituationDisplay();
             expandLink.textContent = req.assistance_type || "Hidden";
             const dateSpan = summaryRow.querySelector(".req-date");
             if (dateSpan) dateSpan.textContent = req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014";
