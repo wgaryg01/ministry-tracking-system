@@ -135,6 +135,9 @@ def list_people(
             "_effective_date": effective_date,
         })
 
+    if search is not None and len(search.strip()) < 4:
+        raise HTTPException(status_code=400, detail="Search must be at least 4 characters")
+
     if search and can_see_names:
         needle = search.strip().lower()
         results = [

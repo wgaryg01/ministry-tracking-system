@@ -386,7 +386,7 @@ async function renderPeopleSection(onNavigate) {
   section.appendChild(el("h2", { text: "Recipients assisted" }));
 
   const controls = el("div", { class: "field-row" });
-  const searchInput = el("input", { type: "text", placeholder: "Search by name" });
+  const searchInput = el("input", { type: "text", placeholder: "Search by name (4+ characters)" });
   const sortSelect = el("select", {}, [
     el("option", { value: "recent", text: "Most recent first" }),
     el("option", { value: "oldest", text: "Oldest first" }),
@@ -399,29 +399,28 @@ async function renderPeopleSection(onNavigate) {
   controls.appendChild(el("div", { class: "field" }, [sortSelect]));
   controls.appendChild(searchBtn);
   section.appendChild(controls);
-  section.appendChild(el("p", { class: "lead", text: "Showing nothing by default \u2014 search, or press Search with the box empty to see open/recent requests." }));
+  section.appendChild(el("p", { class: "lead", text: "Enter at least 4 characters of a name to search." }));
 
   const body = el("div");
   section.appendChild(body);
 
+  const MIN_SEARCH_LENGTH = 4;
+
   async function refresh() {
+    const term = searchInput.value.trim();
     body.innerHTML = "";
+
+    if (term.length < MIN_SEARCH_LENGTH) {
+      body.appendChild(el("div", { class: "empty-state", text: `Enter at least ${MIN_SEARCH_LENGTH} characters to search.` }));
+      return;
+    }
+
     try {
-      const params = new URLSearchParams({ sort: sortSelect.value });
-      if (searchInput.value.trim()) params.set("search", searchInput.value.trim());
+      const params = new URLSearchParams({ sort: sortSelect.value, search: term });
       const data = await api(`/people?${params.toString()}`);
 
-      const strip = el("div", { class: "totals-strip" });
-      for (const [label, key] of [["This month", "month_total"], ["This quarter", "quarter_total"], ["Fiscal YTD", "year_total"], ["All time", "all_time_total"]]) {
-        strip.appendChild(el("div", { class: "stat" }, [
-          el("span", { class: "label", text: label }),
-          el("span", { class: "value", text: money(data.org_totals[key]) }),
-        ]));
-      }
-      body.appendChild(strip);
-
       if (data.people.length === 0) {
-        body.appendChild(el("div", { class: "empty-state", text: searchInput.value.trim() ? "No matches." : "No one currently has an open or recent request." }));
+        body.appendChild(el("div", { class: "empty-state", text: "No matches." }));
         return;
       }
 
