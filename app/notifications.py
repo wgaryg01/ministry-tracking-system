@@ -11,6 +11,10 @@ def _env_subject_prefix() -> str:
     return "[Development] " if settings.environment == "development" else ""
 
 
+def _env_body_notice() -> str:
+    return "\n\n(This message was sent from the Development system.)" if settings.environment == "development" else ""
+
+
 def notify_team_of_new_request(db, req: AssistanceRequest, identity: Identity, excluding_user_id) -> None:
     """
     Called right after a new AssistanceRequest is created. Notifies
@@ -25,7 +29,7 @@ def notify_team_of_new_request(db, req: AssistanceRequest, identity: Identity, e
     through the normal authentication flow rather than a bypass link.
     """
     subject = f"{_env_subject_prefix()}New assistance request submitted"
-    body = "A new assistance request has been submitted. Please log in to review and vote on the need."
+    body = "A new assistance request has been submitted. Please log in to review and vote on the need." + _env_body_notice()
 
     recipients = (
         db.query(User)
@@ -101,7 +105,7 @@ def send_due_notifications() -> None:
             offset_label = format_offset(rule.offset_minutes)
             when = activity.scheduled_at.strftime("%b %d, %Y at %I:%M %p")
             subject = f"{_env_subject_prefix()}Reminder: scheduled activity {offset_label}"
-            body = f"You're assigned to a scheduled activity coming up {offset_label} ({when}). Please log in to view details."
+            body = f"You're assigned to a scheduled activity coming up {offset_label} ({when}). Please log in to view details." + _env_body_notice()
 
             for a in assignments:
                 user = db.query(User).filter(User.id == a.user_id).first()
