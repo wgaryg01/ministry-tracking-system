@@ -1247,7 +1247,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
 
   summaryRow.appendChild(el("span", { class: "req-amount", text: money(req.total_amount) }));
 
-  const viewActivitiesToggle = el("button", { class: "link-btn", text: "View activities" });
+  const viewActivitiesToggle = el("button", { class: "link-btn", text: "View Details" });
   summaryRow.appendChild(viewActivitiesToggle);
 
   card.appendChild(summaryRow);
@@ -1438,7 +1438,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
   viewActivitiesToggle.addEventListener("click", async (e) => {
     e.stopPropagation();
     const nowHidden = activitiesBody.classList.toggle("hidden");
-    viewActivitiesToggle.textContent = nowHidden ? "View activities" : "Hide activities";
+    viewActivitiesToggle.textContent = nowHidden ? "View Details" : "Hide Details";
 
     if (activitiesBuilt) return;
     activitiesBuilt = true;
