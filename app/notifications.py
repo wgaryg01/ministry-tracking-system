@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 from app.db import SessionLocal
-from app.models import NotificationRule, ActivityRecord, ActivityAssignment, User, Identity, NotificationSend
+from app.models import NotificationRule, ActivityRecord, ActivityAssignment, User, Identity, AssistanceRequest, NotificationSend
 from app.crypto import decrypt_field
 from app.email import send_notification_email, EmailSendError
 from app.sms import send_sms, SmsSendError
@@ -57,7 +57,8 @@ def send_due_notifications() -> None:
             if not assignments:
                 continue
 
-            identity = db.query(Identity).filter(Identity.id == activity.identity_id).first()
+            req = db.query(AssistanceRequest).filter(AssistanceRequest.id == activity.assistance_request_id).first()
+            identity = db.query(Identity).filter(Identity.id == req.identity_id).first() if req else None
             person_label = decrypt_field(identity.encrypted_full_name) if identity else "a person"
             offset_label = format_offset(rule.offset_minutes)
             when = activity.scheduled_at.strftime("%b %d, %Y at %I:%M %p")

@@ -43,11 +43,9 @@ class UserInvite(BaseModel):
 @router.post("/invite")
 def invite_user(
     payload: UserInvite,
-    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN)),
     db: Session = Depends(get_db),
 ):
-    if current_user.role == Role.TEAMMEMBER and payload.role == Role.ADMIN:
-        raise HTTPException(status_code=403, detail="Team members can't grant admin access")
 
     # Emails no longer need to be unique — a household can share one
     # inbox across two accounts (e.g. husband and wife). Each account
@@ -141,6 +139,7 @@ def list_users(
             "email": u.email,
             "phone_number": u.phone_number,
             "username": u.username,
+            "full_name": u.full_name,
             "role": u.role.value,
             "is_active": u.is_active,
             "term_start_date": u.term_start_date.isoformat() if u.term_start_date else None,

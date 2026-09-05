@@ -1,18 +1,20 @@
-from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Identity, ActivityRecord, ActivityAssignment, NotificationRule
+from app.models import User, Identity, ActivityRecord, AssistanceRequest, RequestDocument, ActivityAssignment, NotificationRule
 from app.auth import get_current_user
 from app.permissions import can_decrypt_pii, log_pii_access
-from app.crypto import decrypt_field
+from app.crypto import decrypt_field, decode_checklist
 from app.audit import log_audit_event
 from app.household import build_household_summary
 
 router = APIRouter(prefix="/people", tags=["people"])
+
+OPEN_STATUSES = {"new", "approved", "in_progress", "on_hold"}
+RESOLVED_STATUSES = {"denied", "completed", "canceled"}
 
 
 def _period_starts() -> tuple[date, date, date]:
@@ -20,7 +22,6 @@ def _period_starts() -> tuple[date, date, date]:
     month_start = today.replace(day=1)
     quarter_start_month = ((today.month - 1) // 3) * 3 + 1
     quarter_start = today.replace(month=quarter_start_month, day=1)
-    # Fiscal year starts September 1 (standard for most churches).
     fiscal_year_start_year = today.year if today.month >= 9 else today.year - 1
     year_start = date(fiscal_year_start_year, 9, 1)
     return month_start, quarter_start, year_start
@@ -28,25 +29,43 @@ def _period_starts() -> tuple[date, date, date]:
 
 @router.get("")
 def list_people(
+    search: str | None = None,
+    sort: str = "recent",  # "recent" | "oldest" | "first_name" | "last_name" | "amount"
+    show_all: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Available to every authenticated role. Names are only included if
-    the requester can currently decrypt PII (TEAMMEMBER always, ADMIN
-    only while elevated) — VOLUNTEER sees the same totals per person,
-    identified only by identity_id, same as the old activity ledger.
+    Available to every authenticated role. Names/search are only
+    available if the requester can currently decrypt PII (TEAMMEMBER
+    and ADMIN always; DEACON — the Role.VOLUNTEER value — never).
+    By default only shows recipients with an open request, or a
+    denied/completed/canceled request within the last 30 days —
+    pass show_all=true or a search term to see everyone regardless.
     """
     month_start, quarter_start, year_start = _period_starts()
-    activities = db.query(ActivityRecord).all()
+    thirty_days_ago = date.today() - timedelta(days=30)
 
-    totals = defaultdict(lambda: {
-        "month": 0.0, "quarter": 0.0, "year": 0.0, "all_time": 0.0,
-        "count": 0, "last_activity_date": None,
-    })
-    for a in activities:
-        t = totals[a.identity_id]
-        amt = float(a.amount_spent) if a.amount_spent is not None else 0.0
+    all_identities = db.query(Identity).all()
+
+    totals = {
+        identity.id: {
+            "month": 0.0, "quarter": 0.0, "year": 0.0, "all_time": 0.0,
+            "count": 0, "last_activity_date": None, "created_at": identity.created_at,
+        }
+        for identity in all_identities
+    }
+
+    rows = (
+        db.query(ActivityRecord, AssistanceRequest.identity_id)
+        .join(AssistanceRequest, ActivityRecord.assistance_request_id == AssistanceRequest.id)
+        .all()
+    )
+    for a, identity_id in rows:
+        if identity_id not in totals:
+            continue
+        t = totals[identity_id]
+        amt = float(a.amount_spent) if (a.amount_spent is not None and a.payment_approved) else 0.0
         t["all_time"] += amt
         if a.activity_date >= year_start:
             t["year"] += amt
@@ -58,35 +77,91 @@ def list_people(
         if t["last_activity_date"] is None or a.activity_date > t["last_activity_date"]:
             t["last_activity_date"] = a.activity_date
 
+    # Latest request per identity — drives the Date/Status columns and
+    # the default active/recent filter.
+    latest_request_by_identity = {}
+    for req in db.query(AssistanceRequest).all():
+        req_date = req.acknowledged_date or (req.created_at.date() if req.created_at else date.min)
+        existing = latest_request_by_identity.get(req.identity_id)
+        if existing is None or req_date > existing["date"]:
+            latest_request_by_identity[req.identity_id] = {"date": req_date, "status": req.status}
+
     grant_or_true = can_decrypt_pii(current_user, db)
     can_see_names = bool(grant_or_true)
     elevation_grant = grant_or_true if grant_or_true is not True else None
 
-    identities_by_id = {}
-    if can_see_names and totals:
-        rows = db.query(Identity).filter(Identity.id.in_(list(totals.keys()))).all()
-        identities_by_id = {row.id: row for row in rows}
+    identities_by_id = {identity.id: identity for identity in all_identities}
 
     results = []
     for identity_id, t in totals.items():
-        name = None
+        first_name = last_name = name = None
         if can_see_names:
             identity_row = identities_by_id.get(identity_id)
             if identity_row:
-                name = decrypt_field(identity_row.encrypted_full_name)
+                first_name = decrypt_field(identity_row.encrypted_first_name)
+                last_name = decrypt_field(identity_row.encrypted_last_name)
+                name = f"{first_name} {last_name}"
                 log_pii_access(db, current_user, identity_id, elevation_grant)
+
+        latest_req = latest_request_by_identity.get(identity_id)
+        request_date = latest_req["date"] if latest_req else None
+        request_status = latest_req["status"] if latest_req else None
+        is_active = bool(
+            latest_req and (
+                latest_req["status"] in OPEN_STATUSES
+                or (latest_req["status"] in RESOLVED_STATUSES and latest_req["date"] >= thirty_days_ago)
+            )
+        )
+
+        # Effective date for recency sorting: last activity if any,
+        # else when the person was added — so a brand-new person with
+        # no activity yet still sorts sensibly rather than always last.
+        effective_date = t["last_activity_date"] or (t["created_at"].date() if t["created_at"] else None)
+
         results.append({
             "identity_id": str(identity_id),
             "name": name,
+            "first_name": first_name,
+            "last_name": last_name,
+            "request_date": request_date.isoformat() if request_date else None,
+            "request_status": request_status,
+            "is_active": is_active,
             "month_total": round(t["month"], 2),
             "quarter_total": round(t["quarter"], 2),
             "year_total": round(t["year"], 2),
             "all_time_total": round(t["all_time"], 2),
             "activity_count": t["count"],
             "last_activity_date": t["last_activity_date"].isoformat() if t["last_activity_date"] else None,
+            "_effective_date": effective_date,
         })
 
-    results.sort(key=lambda r: r["last_activity_date"] or "", reverse=True)
+    if search and can_see_names:
+        needle = search.strip().lower()
+        results = [
+            r for r in results
+            if needle in (r["first_name"] or "").lower()
+            or needle in (r["last_name"] or "").lower()
+            or needle in f"{r['first_name'] or ''} {r['last_name'] or ''}".lower()
+            or needle in f"{r['last_name'] or ''} {r['first_name'] or ''}".lower()
+            or needle in f"{r['last_name'] or ''}, {r['first_name'] or ''}".lower()
+        ]
+    elif not show_all:
+        # No search — apply the default active/recent filter.
+        results = [r for r in results if r["is_active"]]
+
+    if sort == "oldest":
+        results.sort(key=lambda r: r["_effective_date"] or date.min)
+    elif sort == "amount":
+        results.sort(key=lambda r: r["all_time_total"], reverse=True)
+    elif sort == "first_name" and can_see_names:
+        results.sort(key=lambda r: (r["first_name"] or "").lower())
+    elif sort == "last_name" and can_see_names:
+        results.sort(key=lambda r: ((r["last_name"] or "").lower(), (r["first_name"] or "").lower()))
+    else:  # "recent" default, and the fallback when a name-sort was requested but names aren't visible
+        results.sort(key=lambda r: r["_effective_date"] or date.min, reverse=True)
+
+    for r in results:
+        del r["_effective_date"]
 
     org_totals = {
         "month_total": round(sum(r["month_total"] for r in results), 2),
@@ -103,108 +178,136 @@ def list_people(
     return {"org_totals": org_totals, "people": results}
 
 
-@router.get("/{identity_id}/activities")
-def get_person_detail(
+def _activity_out(a: ActivityRecord, can_see_pii: bool) -> dict:
+    out = {
+        "id": str(a.id),
+        "activity_date": a.activity_date.isoformat(),
+        "amount_spent": float(a.amount_spent) if a.amount_spent is not None else None,
+        "category": a.category,
+        "status": a.status,
+        "scheduled_at": a.scheduled_at.isoformat() if a.scheduled_at else None,
+        "payment_approved": a.payment_approved,
+        "notes": decrypt_field(a.encrypted_notes) if can_see_pii else None,
+    }
+    if can_see_pii:
+        out["attachments"] = [
+            {"id": str(att.id), "filename": att.filename, "content_type": att.content_type}
+            for att in a.attachments
+        ]
+    else:
+        out["attachment_count"] = len(a.attachments)
+    return out
+
+
+@router.get("/{identity_id}")
+def get_person(
     identity_id: str,
-    page: int = 1,
-    page_size: int = 15,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Available to every authenticated role. VOLUNTEER gets the activity
-    list (date/amount/category) but null name/address, same boundary
-    as everywhere else. TEAMMEMBER and elevated ADMIN get the full
-    decrypted picture, including address history. Activities are
-    paginated (page_size capped at 50) since a long-served person can
-    accumulate a lot of history.
+    The full picture for one person: identity/applicant info (gated),
+    address, household, and every assistance request with its
+    activities and documents nested underneath. VOLUNTEER (and a
+    non-elevated ADMIN) get null identity fields and request details,
+    but still see each request's activity dates/amounts/categories —
+    same PII boundary as everywhere else, just one level deeper now.
     """
-    page = max(page, 1)
-    page_size = min(max(page_size, 1), 50)
-
     identity = db.query(Identity).filter(Identity.id == identity_id).first()
     if not identity:
         raise HTTPException(status_code=404, detail="Person not found")
 
-    base_query = db.query(ActivityRecord).filter(ActivityRecord.identity_id == identity_id)
-    total = base_query.count()
-    activities = (
-        base_query
-        .order_by(ActivityRecord.activity_date.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
-
     grant_or_true = can_decrypt_pii(current_user, db)
     can_see_pii = bool(grant_or_true)
-    can_see_staffing = current_user.role != "volunteer"  # assignment/notification info isn't client PII, just staff-only
+    elevation_grant = grant_or_true if grant_or_true is not True else None
 
-    activity_list = []
-    for a in activities:
-        entry = {
-            "id": str(a.id),
-            "activity_date": a.activity_date.isoformat(),
-            "amount_spent": float(a.amount_spent) if a.amount_spent is not None else None,
-            "category": a.category,
-            "status": a.status,
-            "scheduled_at": a.scheduled_at.isoformat() if a.scheduled_at else None,
-            "notes": decrypt_field(a.encrypted_notes) if can_see_pii else None,
-        }
-        if can_see_staffing:
-            assigned = (
-                db.query(User.id, User.email)
-                .join(ActivityAssignment, ActivityAssignment.user_id == User.id)
-                .filter(ActivityAssignment.activity_id == a.id)
-                .all()
-            )
-            entry["assigned_to"] = [{"id": str(uid), "email": email} for uid, email in assigned]
-            offsets = (
-                db.query(NotificationRule.offset_minutes)
-                .filter(NotificationRule.activity_id == a.id)
-                .order_by(NotificationRule.offset_minutes)
-                .all()
-            )
-            entry["notification_offsets_minutes"] = [o[0] for o in offsets]
-        activity_list.append(entry)
-
-    pagination = {"page": page, "page_size": page_size, "total": total}
-    if not grant_or_true:
+    if can_see_pii:
+        log_pii_access(db, current_user, identity.id, elevation_grant)
         log_audit_event(
-            db, current_user.id, "identity_view_denied",
+            db, current_user.id, "identity_viewed",
             resource_type="identity", resource_id=identity.id,
+            details="via_elevation" if elevation_grant else "via_teammember_role",
         )
-        return {
-            "identity_id": identity_id, "name": None, "dob": None,
-            "contact_info": None, "notes": None,
+    else:
+        log_audit_event(db, current_user.id, "identity_view_denied", resource_type="identity", resource_id=identity.id)
+
+    if can_see_pii:
+        address_history = [
+            {
+                "street": decrypt_field(a.encrypted_street),
+                "unit": decrypt_field(a.encrypted_unit),
+                "city": decrypt_field(a.encrypted_city),
+                "state": decrypt_field(a.encrypted_state),
+                "zip": decrypt_field(a.encrypted_zip),
+                "effective_date": a.effective_date.isoformat(),
+            }
+            for a in identity.addresses
+        ]
+        current_address = address_history[-1] if address_history else None
+        identity_out = {
+            "name": f"{decrypt_field(identity.encrypted_first_name)} {decrypt_field(identity.encrypted_last_name)}",
+            "first_name": decrypt_field(identity.encrypted_first_name),
+            "last_name": decrypt_field(identity.encrypted_last_name),
+            "phone": decrypt_field(identity.encrypted_phone),
+            "email": decrypt_field(identity.encrypted_email),
+            "notes": decrypt_field(identity.encrypted_notes),
+            "employment_status": decode_checklist(decrypt_field(identity.encrypted_employment_status)),
+            "employer_name": decrypt_field(identity.encrypted_employer_name),
+            "job_title": decrypt_field(identity.encrypted_job_title),
+            "referral_source": decode_checklist(decrypt_field(identity.encrypted_referral_source)),
+            "referral_name": decrypt_field(identity.encrypted_referral_name),
+            "current_address": current_address,
+            "address_history": address_history,
+            **build_household_summary(identity),
+        }
+    else:
+        identity_out = {
+            "name": None, "first_name": None, "last_name": None, "phone": None, "email": None, "notes": None,
+            "employment_status": [], "employer_name": None, "job_title": None,
+            "referral_source": [], "referral_name": None,
             "current_address": None, "address_history": [],
             "household_members": [], "total_adults": None, "total_children": None, "total_household": None,
-            "activities": activity_list, "pagination": pagination,
         }
 
-    elevation_grant = grant_or_true if grant_or_true is not True else None
-    log_pii_access(db, current_user, identity.id, elevation_grant)
-    log_audit_event(
-        db, current_user.id, "identity_viewed",
-        resource_type="identity", resource_id=identity.id,
-        details="via_elevation" if elevation_grant else "via_teammember_role",
-    )
+    requests_out = []
+    for req in db.query(AssistanceRequest).filter(AssistanceRequest.identity_id == identity_id).order_by(AssistanceRequest.created_at.desc()).all():
+        activities = (
+            db.query(ActivityRecord)
+            .filter(ActivityRecord.assistance_request_id == req.id)
+            .order_by(ActivityRecord.activity_date.desc())
+            .all()
+        )
+        activity_list = [_activity_out(a, can_see_pii) for a in activities]
+        total_amount = round(sum(float(a.amount_spent) for a in activities if a.amount_spent is not None and a.payment_approved), 2)
 
-    address_history = [
-        {"address": decrypt_field(a.encrypted_address), "effective_date": a.effective_date.isoformat()}
-        for a in identity.addresses
-    ]
-    current_address = address_history[-1] if address_history else None
+        if can_see_pii:
+            documents = db.query(RequestDocument).filter(RequestDocument.assistance_request_id == req.id).all()
+            req_out = {
+                "id": str(req.id),
+                "assistance_type": decrypt_field(req.encrypted_assistance_type),
+                "status": req.status,
+                "total_amount": total_amount,
+                "situation_description": decrypt_field(req.encrypted_situation_description),
+                "request_received_date": req.acknowledged_date.isoformat() if req.acknowledged_date else (req.created_at.date().isoformat() if req.created_at else None),
+                "helper_name": decrypt_field(req.encrypted_helper_name),
+                "helper_contact": decrypt_field(req.encrypted_helper_contact),
+                "helper_relationship": decrypt_field(req.encrypted_helper_relationship),
+                "created_at": req.created_at.isoformat() if req.created_at else None,
+                "documents": [{"id": str(d.id), "filename": d.filename, "content_type": d.content_type} for d in documents],
+                "activities": activity_list,
+            }
+        else:
+            req_out = {
+                "id": str(req.id),
+                "assistance_type": None, "situation_description": None,
+                "status": req.status,
+                "total_amount": total_amount,
+                "request_received_date": req.acknowledged_date.isoformat() if req.acknowledged_date else (req.created_at.date().isoformat() if req.created_at else None),
+                "helper_name": None, "helper_contact": None, "helper_relationship": None,
+                "created_at": req.created_at.isoformat() if req.created_at else None,
+                "documents": [],
+                "activities": activity_list,
+            }
+        requests_out.append(req_out)
 
-    return {
-        "identity_id": identity_id,
-        "name": decrypt_field(identity.encrypted_full_name),
-        "dob": decrypt_field(identity.encrypted_dob),
-        "contact_info": decrypt_field(identity.encrypted_contact_info),
-        "notes": decrypt_field(identity.encrypted_notes),
-        "current_address": current_address,
-        "address_history": address_history,
-        **build_household_summary(identity),
-        "activities": activity_list,
-        "pagination": pagination,
-    }
+    return {"identity_id": identity_id, **identity_out, "requests": requests_out}

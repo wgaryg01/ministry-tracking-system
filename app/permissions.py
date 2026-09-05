@@ -48,16 +48,13 @@ def get_active_elevation(user: User, db: Session) -> ElevationGrant | None:
 
 def can_decrypt_pii(user: User, db: Session) -> ElevationGrant | bool:
     """
-    Returns True if the user can decrypt PII unconditionally (TEAMMEMBER),
-    the active ElevationGrant if an ADMIN is currently elevated, or False
-    if decryption isn't permitted right now (VOLUNTEER, or ADMIN with no
-    active elevation).
+    ADMIN and TEAMMEMBER can both always decrypt PII — ADMIN no longer
+    needs to request elevation. DEACON (the Role.VOLUNTEER value —
+    kept internally to avoid another destructive rename migration,
+    relabeled "Deacon" everywhere in the UI) never can.
     """
-    if user.role == Role.TEAMMEMBER:
+    if user.role in (Role.TEAMMEMBER, Role.ADMIN):
         return True
-    if user.role == Role.ADMIN:
-        grant = get_active_elevation(user, db)
-        return grant if grant else False
     return False
 
 
