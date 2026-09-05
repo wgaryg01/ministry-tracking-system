@@ -2846,12 +2846,67 @@ function renderAccountSetup(user, org, onComplete) {
 
 let _globalPresenceStarted = false;
 
+function showReportIssueForm() {
+  const overlay = el("div", { class: "file-popup-overlay" });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+
+  const closeBtn = el("button", { class: "secondary", text: "Close" });
+  closeBtn.addEventListener("click", () => overlay.remove());
+
+  const panel = el("div", { class: "file-popup-panel" });
+  panel.appendChild(el("div", { class: "file-popup-header" }, [el("span", { text: "Report an issue" }), closeBtn]));
+
+  const feedback = el("div");
+  const titleInput = el("input", { type: "text", required: "true", placeholder: "Short summary" });
+  const descInput = el("textarea", { placeholder: "What happened? What did you expect instead?" });
+  const submitBtn = el("button", { class: "primary", text: "Submit" });
+
+  const form = el("form", { onsubmit: async (e) => {
+    e.preventDefault();
+    submitBtn.setAttribute("disabled", "true");
+    feedback.innerHTML = "";
+    try {
+      const result = await api("/feedback", {
+        method: "POST",
+        body: JSON.stringify({
+          title: titleInput.value,
+          description: descInput.value,
+          page_context: document.title,
+        }),
+      });
+      feedback.appendChild(msg("Thanks \u2014 issue created.", "success"));
+      form.reset();
+    } catch (err) {
+      feedback.appendChild(msg(err.message, "error"));
+    } finally {
+      submitBtn.removeAttribute("disabled");
+    }
+  }});
+
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Summary" }), titleInput]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Details" }), descInput]));
+  form.appendChild(submitBtn);
+
+  const body = el("div");
+  body.style.padding = "16px";
+  body.appendChild(form);
+  body.appendChild(feedback);
+  panel.appendChild(body);
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+}
+
 function startGlobalPresence() {
   if (_globalPresenceStarted) return;
   _globalPresenceStarted = true;
 
   const headerUser = document.querySelector(".header-user");
   const signOutBtn = document.getElementById("sign-out-btn");
+  const reportBtn = el("button", { class: "link-btn", text: "Report an issue" });
+  headerUser.insertBefore(reportBtn, signOutBtn);
+  reportBtn.addEventListener("click", () => showReportIssueForm());
+
   const onlineToggle = el("button", { class: "link-btn", text: "" });
   const onlineDropdown = el("div", { class: "hidden online-dropdown" });
   headerUser.insertBefore(onlineDropdown, signOutBtn);

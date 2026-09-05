@@ -37,12 +37,23 @@ class Settings(BaseSettings):
     # the real server.
     environment: str = "production"
 
+    # Optional — GitHub issue reporting (manual "Report an issue"
+    # button, and automatic issue creation on unhandled 500 errors) is
+    # skipped entirely if either is unset. Needs a fine-grained PAT
+    # with "Issues: write" access on the target repo.
+    github_token: str | None = None
+    github_repo: str | None = None  # "owner/repo-name"
+
     class Config:
         env_file = ".env"
 
     @property
     def twilio_configured(self) -> bool:
         return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_phone_number)
+
+    @property
+    def github_configured(self) -> bool:
+        return bool(self.github_token and self.github_repo)
 
     @property
     def database_url(self) -> str:
