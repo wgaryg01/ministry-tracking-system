@@ -224,6 +224,26 @@ const header = document.getElementById("app-header");
 let currentUser = null;
 let currentOrg = null;
 
+function formatDateDisplay(isoDate) {
+  if (!isoDate) return isoDate;
+  const datePart = isoDate.slice(0, 10); // strip any time component if present
+  const parts = datePart.split("-");
+  if (parts.length !== 3) return isoDate;
+  const [y, m, d] = parts;
+  return `${m}-${d}-${y}`;
+}
+
+function formatDateTimeDisplay(isoDateTime) {
+  if (!isoDateTime) return isoDateTime;
+  const dt = new Date(isoDateTime);
+  if (isNaN(dt)) return isoDateTime;
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  const y = dt.getFullYear();
+  const time = dt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${m}-${d}-${y} ${time}`;
+}
+
 function roleLabel(role) {
   return role === "volunteer" ? "deacon" : role;
 }
@@ -420,7 +440,7 @@ async function renderPeopleSection(onNavigate) {
           onclick: () => onNavigate(p.identity_id),
         }, [
           el("span", { class: "who", text: label }),
-          el("span", { class: "stat-col", text: p.request_date || "\u2014" }),
+          el("span", { class: "stat-col", text: p.request_date ? formatDateDisplay(p.request_date) : "\u2014" }),
           el("span", { class: "stat-col all-time", text: p.request_status ? formatRequestStatus(p.request_status) : "\u2014" }),
         ]);
         table.appendChild(row);
@@ -772,7 +792,7 @@ function renderAccessHistorySection(identityId) {
           const list = el("div", { class: "ledger" });
           for (const l of logs) {
             list.appendChild(el("div", { class: "ledger-row" }, [
-              el("span", { class: "date", text: new Date(l.created_at).toLocaleString() }),
+              el("span", { class: "date", text: formatDateTimeDisplay(l.created_at) }),
               el("span", { class: "category", text: `${l.action} \u2014 ${l.user_email}` }),
             ]));
           }
@@ -860,7 +880,7 @@ async function renderEditActivityForm(activity, onSaved) {
 
 function renderActivityRow(a, canEdit, onSaved) {
   const wrap = el("div");
-  const statusSuffix = a.status && a.status !== "completed" ? ` \u2014 ${a.status}${a.scheduled_at ? " for " + new Date(a.scheduled_at).toLocaleString() : ""}` : "";
+  const statusSuffix = a.status && a.status !== "completed" ? ` \u2014 ${a.status}${a.scheduled_at ? " for " + formatDateTimeDisplay(a.scheduled_at) : ""}` : "";
   const amountText = a.amount_spent != null
     ? money(a.amount_spent) + (a.payment_approved ? "" : " (quote)")
     : "\u2014";
@@ -887,7 +907,7 @@ function renderActivityRow(a, canEdit, onSaved) {
   }
 
   const row = el("div", { class: "ledger-row" }, [
-    el("span", { class: "date", text: a.activity_date }),
+    el("span", { class: "date", text: formatDateDisplay(a.activity_date) }),
     el("span", { class: "category", text: (a.category || "\u2014") + statusSuffix }),
     amountCol,
   ]);
@@ -1053,7 +1073,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
   const card = el("div", { class: "identity-card" });
 
   const summaryRow = el("div", { class: "request-row" });
-  summaryRow.appendChild(el("span", { class: "req-date", text: req.created_at ? req.created_at.slice(0, 10) : "\u2014" }));
+  summaryRow.appendChild(el("span", { class: "req-date", text: req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014" }));
 
   const expandLink = el("button", { class: "link-btn req-need", text: req.assistance_type || "Hidden" });
   summaryRow.appendChild(expandLink);
@@ -1112,7 +1132,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     if (!isHidden) {
       body.appendChild(el("dl", {}, [
         el("dt", { text: "Situation" }), el("dd", { text: req.situation_description || "\u2014" }),
-        el("dt", { text: "Request received" }), el("dd", { text: req.request_received_date || "\u2014" }),
+        el("dt", { text: "Request received" }), el("dd", { text: req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014" }),
         el("dt", { text: "Helper" }), el("dd", { text: req.helper_name ? `${req.helper_name} \u2014 ${req.helper_contact || ""} (${req.helper_relationship || ""})` : "\u2014" }),
       ]));
 
@@ -1318,7 +1338,7 @@ async function renderPersonDetail(identityId, onBack) {
       const list = el("ul", { class: "address-history" });
       for (const a of [...data.address_history].reverse()) {
         list.appendChild(el("li", {}, [
-          el("span", { class: "move-date", text: a.effective_date + " \u2014 " }),
+          el("span", { class: "move-date", text: formatDateDisplay(a.effective_date) + " \u2014 " }),
           formatAddress(a),
         ]));
       }
