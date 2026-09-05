@@ -5,6 +5,7 @@ import re
 
 from app.db import get_db
 from app.models import User, Role, OrgSettings
+from app.upload_utils import read_upload_limited
 from app.permissions import require_role
 from app.audit import log_audit_event
 from app.config import settings
@@ -103,9 +104,7 @@ async def update_org_settings(
                 status_code=400,
                 detail=f"Logo must be one of: {', '.join(ALLOWED_LOGO_TYPES)}",
             )
-        data = await logo.read()
-        if len(data) > MAX_LOGO_BYTES:
-            raise HTTPException(status_code=400, detail="Logo must be under 2MB")
+        data = await read_upload_limited(logo, MAX_LOGO_BYTES)
         settings_row.logo_data = data
         settings_row.logo_content_type = logo.content_type
         changes.append("logo")

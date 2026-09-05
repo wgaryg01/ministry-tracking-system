@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import User, Role, ActivityRecord, AssistanceRequest, ActivityAssignment, NotificationRule, ActivityAttachment
+from app.upload_utils import read_upload_limited
 from app.permissions import require_role, can_decrypt_pii, log_pii_access
 from app.auth import get_current_user
 from app.audit import log_audit_event
@@ -213,9 +214,7 @@ async def upload_activity_attachment(
     if not _attachment_type_allowed(file.content_type, file.filename):
         raise HTTPException(status_code=400, detail="Only images and PDF files are allowed")
 
-    data = await file.read()
-    if len(data) > MAX_ATTACHMENT_BYTES:
-        raise HTTPException(status_code=400, detail="File must be under 10MB")
+    data = await read_upload_limited(file, MAX_ATTACHMENT_BYTES)
 
     attachment = ActivityAttachment(
         activity_id=activity.id,

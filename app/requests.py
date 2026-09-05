@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import User, Role, Identity, AssistanceRequest, RequestDocument, RequestVote, ActivityRecord
+from app.upload_utils import read_upload_limited
 from app.permissions import require_role, can_decrypt_pii, log_pii_access
 from app.auth import get_current_user
 from app.crypto import encrypt_field, decrypt_field, encrypt_bytes, decrypt_bytes
@@ -140,9 +141,7 @@ async def upload_document(
     if not _document_type_allowed(file.content_type, file.filename):
         raise HTTPException(status_code=400, detail="Only images and PDF files are allowed")
 
-    data = await file.read()
-    if len(data) > MAX_DOCUMENT_BYTES:
-        raise HTTPException(status_code=400, detail="File must be under 10MB")
+    data = await read_upload_limited(file, MAX_DOCUMENT_BYTES)
 
     doc = RequestDocument(
         assistance_request_id=req.id,

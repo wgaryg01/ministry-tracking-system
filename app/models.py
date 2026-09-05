@@ -42,6 +42,11 @@ class User(Base):
     is_active = Column(Boolean, nullable=False, default=True)  # a manual on/off switch, independent of TEAMMEMBER term dates
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Brute-force protection on password sign-in. Reset to 0/None on
+    # any successful login; incremented on each wrong password.
+    failed_login_attempts = Column(Integer, nullable=False, default=0)
+    locked_until = Column(DateTime, nullable=True)
+
     # Term limits — required for TEAMMEMBER (church-appointed terms),
     # unused for ADMIN/VOLUNTEER. Enforced at sign-in: a TEAMMEMBER
     # outside their [term_start_date, term_end_date] window is denied,

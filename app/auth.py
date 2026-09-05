@@ -18,6 +18,8 @@ from app.password import verify_password
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 TOKEN_TTL_MINUTES = 15
+MAX_FAILED_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
 
 
 class MagicLinkRequest(BaseModel):
@@ -199,9 +201,29 @@ def login_step_one(payload: LoginRequest, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(User.username == payload.username).first()
 
+    if user and user.locked_until and user.locked_until > datetime.utcnow():
+        # Still locked out — don't even attempt password verification,
+        # and don't reveal that locking is the reason (same generic
+        # response either way, so an attacker can't distinguish
+        # "wrong password" from "this account is currently locked").
+        log_audit_event(db, user.id, "login_denied", details="account_locked")
+        return generic
+
     if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
+        if user:
+            user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+            if user.failed_login_attempts >= MAX_FAILED_LOGIN_ATTEMPTS:
+                user.locked_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+                user.failed_login_attempts = 0
+                log_audit_event(db, user.id, "account_locked", details=f"after {MAX_FAILED_LOGIN_ATTEMPTS} failed attempts")
+            db.commit()
         log_audit_event(db, user.id if user else None, "login_denied", details="password_mismatch")
         return generic
+
+    # Successful password check — clear any prior failure tracking.
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    db.commit()
 
     if not _term_is_active(user):
         log_audit_event(db, user.id, "login_denied", details="term_not_active")
