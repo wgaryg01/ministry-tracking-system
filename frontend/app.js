@@ -1748,7 +1748,7 @@ function renderManageEditForm(u, onSaved) {
   });
 
   const saveBtn = el("button", { class: "primary", text: "Save" });
-  const removeBtn = el("button", { class: "secondary", text: u.is_active ? "Remove access" : "Restore access" });
+  const removeBtn = el("button", { class: "secondary", text: u.is_active ? "Deactivate account now" : "Reactivate account" });
 
   async function submitUpdate(isActive) {
     feedback.innerHTML = "";
@@ -1769,9 +1769,15 @@ function renderManageEditForm(u, onSaved) {
   removeBtn.addEventListener("click", (e) => { e.preventDefault(); submitUpdate(!u.is_active); });
 
   const wrap = el("div");
+  wrap.appendChild(el("h3", { text: "Role & term" }));
   wrap.appendChild(el("div", { class: "field" }, [el("label", { text: "Role" }), roleSelect]));
   wrap.appendChild(termFields);
-  wrap.appendChild(el("div", { class: "field-row" }, [saveBtn, removeBtn]));
+  wrap.appendChild(saveBtn);
+  wrap.appendChild(el("h3", { text: "Account status" }));
+  wrap.appendChild(el("p", { class: "lead", text: u.is_active
+    ? "Deactivate immediately, regardless of term dates. They'll be signed out and blocked from logging in right away."
+    : "This account is currently deactivated and cannot sign in." }));
+  wrap.appendChild(removeBtn);
   wrap.appendChild(feedback);
   return wrap;
 }
@@ -1824,6 +1830,13 @@ async function renderManageTeamSection() {
     }
 
     await refreshList();
+
+    // Invite lives here, under the roster, rather than as its own
+    // top-level button — it's part of managing the team, not a
+    // separate everyday action.
+    const invite = renderInviteSection(true);
+    body.appendChild(invite.toggle);
+    body.appendChild(invite.body);
   });
 
   return { toggle, body };
@@ -2071,13 +2084,11 @@ async function renderDashboard(user, org) {
   if (user.role === "admin") {
     const newPersonBtn = el("button", { class: "secondary", text: "+ New recipient" });
     newPersonBtn.addEventListener("click", () => renderNewPersonPage((newIdentityId) => showDetail(newIdentityId), showList));
-    const invite = renderInviteSection(true);
     const manageTeam = await renderManageTeamSection();
     const myInfo = await myInfoFor();
 
     const section = el("section");
-    section.appendChild(el("div", { class: "button-row" }, [newPersonBtn, invite.toggle, manageTeam.toggle, myInfo.toggle]));
-    section.appendChild(invite.body);
+    section.appendChild(el("div", { class: "button-row" }, [newPersonBtn, manageTeam.toggle, myInfo.toggle]));
     section.appendChild(manageTeam.body);
     section.appendChild(myInfo.body);
     main.appendChild(section);
