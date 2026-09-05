@@ -435,6 +435,7 @@ class MeetingNote(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     meeting_datetime = Column(DateTime, nullable=False)
+    duration_minutes = Column(Integer, nullable=True)
     location = Column(String, nullable=True)
     summary = Column(Text, nullable=True)
     redacted_transcript = Column(Text, nullable=True)

@@ -2307,7 +2307,9 @@ function renderMeetingForm(existing, teamRoster, onSaved, onCancel) {
   const timeInput = el("input", { type: "time", value: dt.toTimeString().slice(0, 5) });
   const locationInput = el("input", { type: "text", placeholder: "Location" });
   locationInput.value = existing?.location || "";
-  const summaryInput = el("textarea", { placeholder: "Meeting summary" });
+  const durationInput = el("input", { type: "number", min: "1", placeholder: "Duration (minutes)" });
+  if (existing?.duration_minutes) durationInput.value = existing.duration_minutes;
+  const summaryInput = el("textarea", { placeholder: "Meeting summary \u2014 should contain no names or identifying details about any recipient" });
   summaryInput.value = existing?.summary || "";
   const redactedInput = el("textarea", { placeholder: "Redacted transcript \u2014 must contain no names or identifying details about any recipient" });
   redactedInput.value = existing?.redacted_transcript || "";
@@ -2317,12 +2319,12 @@ function renderMeetingForm(existing, teamRoster, onSaved, onCancel) {
   const attendeeBoxes = el("div");
   const existingAttendeeIds = new Set(existing?.attendee_user_ids || []);
   const checkboxes = [];
-  for (const u of teamRoster) {
+  const eligibleAttendees = teamRoster.filter((u) => u.role !== "volunteer");
+  for (const u of eligibleAttendees) {
     const cb = el("input", { type: "checkbox", value: u.id });
     if (existingAttendeeIds.has(u.id)) cb.checked = true;
     checkboxes.push(cb);
-    const label = el("label", {}, [cb, ` ${u.full_name || u.email || u.username}`]);
-    label.style.display = "block";
+    const label = el("label", { class: "checkbox-label" }, [cb, u.full_name || u.email || u.username]);
     attendeeBoxes.appendChild(label);
   }
 
@@ -2336,6 +2338,7 @@ function renderMeetingForm(existing, teamRoster, onSaved, onCancel) {
     try {
       const payload = {
         meeting_datetime: new Date(`${dateInput.value}T${timeInput.value || "00:00"}`).toISOString(),
+        duration_minutes: durationInput.value ? parseInt(durationInput.value, 10) : null,
         location: locationInput.value || null,
         summary: summaryInput.value || null,
         redacted_transcript: redactedInput.value || null,
@@ -2357,6 +2360,7 @@ function renderMeetingForm(existing, teamRoster, onSaved, onCancel) {
   form.appendChild(el("div", { class: "field-row" }, [
     el("div", { class: "field" }, [el("label", { text: "Date" }), dateInput]),
     el("div", { class: "field" }, [el("label", { text: "Time" }), timeInput]),
+    el("div", { class: "field" }, [el("label", { text: "Duration (minutes)" }), durationInput]),
   ]));
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Location" }), locationInput]));
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Attendance" }), attendeeBoxes]));
@@ -2427,7 +2431,8 @@ async function renderMeetingCard(m, onChanged) {
   const dateLabel = formatDateDisplay(dt.toISOString().slice(0, 10));
   const timeLabel = dt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-  const toggle = el("button", { class: "link-btn", text: `${dateLabel} ${timeLabel} \u2014 ${m.location || "No location"}` });
+  const durationSuffix = m.duration_minutes ? ` (${m.duration_minutes} min)` : "";
+  const toggle = el("button", { class: "link-btn", text: `${dateLabel} ${timeLabel} \u2014 ${m.location || "No location"}${durationSuffix}` });
   card.appendChild(toggle);
   card.appendChild(el("div", { class: "lead", text: m.summary || "No summary." }));
   card.appendChild(el("div", { class: "lead", text: `Attendance: ${m.attendee_names.length > 0 ? m.attendee_names.join(", ") : "none recorded"}` }));

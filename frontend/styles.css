@@ -254,6 +254,8 @@ button.secondary:hover { background: #CBC2AC; }
   .report-row-head.report-row { display: none; }
 }
 
+.checkbox-label { display: flex; align-items: center; gap: 6px; font-weight: normal; }
+
 @media print {
   .identity-card, .totals-strip, .people-table, .ledger, .request-row,
   .file-popup-overlay,

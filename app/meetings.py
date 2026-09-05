@@ -16,6 +16,7 @@ router = APIRouter(prefix="/meetings", tags=["meetings"])
 
 class MeetingCreate(BaseModel):
     meeting_datetime: datetime
+    duration_minutes: int | None = None
     location: str | None = None
     summary: str | None = None
     redacted_transcript: str | None = None
@@ -27,6 +28,22 @@ class MeetingUpdate(MeetingCreate):
     pass
 
 
+def _save_attendees(db: Session, meeting_id, user_ids: list[str]):
+    """
+    Deacons (Role.VOLUNTEER) aren't permitted in these meetings at all
+    — silently drop any such id rather than erroring, since the
+    frontend already excludes them from the picker and this is just
+    the server-side backstop.
+    """
+    if user_ids:
+        eligible = {
+            str(u.id) for u in db.query(User).filter(User.id.in_(user_ids), User.role != Role.VOLUNTEER).all()
+        }
+        for user_id in user_ids:
+            if user_id in eligible:
+                db.add(MeetingAttendance(meeting_id=meeting_id, user_id=user_id))
+
+
 def _meeting_out(m: MeetingNote, db: Session, can_see_pii: bool) -> dict:
     attendee_rows = db.query(MeetingAttendance).filter(MeetingAttendance.meeting_id == m.id).all()
     attendee_ids = [str(a.user_id) for a in attendee_rows]
@@ -36,6 +53,7 @@ def _meeting_out(m: MeetingNote, db: Session, can_see_pii: bool) -> dict:
     return {
         "id": str(m.id),
         "meeting_datetime": m.meeting_datetime.isoformat(),
+        "duration_minutes": m.duration_minutes,
         "location": m.location,
         "summary": m.summary,
         "redacted_transcript": m.redacted_transcript,
@@ -75,6 +93,7 @@ def create_meeting(
 ):
     meeting = MeetingNote(
         meeting_datetime=payload.meeting_datetime,
+        duration_minutes=payload.duration_minutes,
         location=payload.location,
         summary=payload.summary,
         redacted_transcript=payload.redacted_transcript,
@@ -85,8 +104,7 @@ def create_meeting(
     db.commit()
     db.refresh(meeting)
 
-    for user_id in payload.attendee_user_ids:
-        db.add(MeetingAttendance(meeting_id=meeting.id, user_id=user_id))
+    _save_attendees(db, meeting.id, payload.attendee_user_ids)
     db.commit()
 
     log_audit_event(
@@ -109,6 +127,7 @@ def update_meeting(
         raise HTTPException(status_code=404, detail="Meeting not found")
 
     meeting.meeting_datetime = payload.meeting_datetime
+    meeting.duration_minutes = payload.duration_minutes
     meeting.location = payload.location
     meeting.summary = payload.summary
     meeting.redacted_transcript = payload.redacted_transcript
@@ -117,8 +136,7 @@ def update_meeting(
     db.commit()
 
     db.query(MeetingAttendance).filter(MeetingAttendance.meeting_id == meeting.id).delete()
-    for user_id in payload.attendee_user_ids:
-        db.add(MeetingAttendance(meeting_id=meeting.id, user_id=user_id))
+    _save_attendees(db, meeting.id, payload.attendee_user_ids)
     db.commit()
 
     log_audit_event(
