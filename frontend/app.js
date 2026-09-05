@@ -261,7 +261,7 @@ function setHeader(user, org) {
   header.classList.remove("hidden");
   document.getElementById("user-email").textContent = user.full_name || user.email;
   document.getElementById("user-role").textContent = roleLabel(user.role);
-  document.getElementById("brand-name").textContent = org.ministry_name;
+  document.getElementById("brand-name").textContent = siteDisplayName(org);
   const logoEl = document.getElementById("brand-logo");
   if (org.has_logo) {
     logoEl.src = "/org/logo";
@@ -274,9 +274,13 @@ document.getElementById("sign-out-btn").addEventListener("click", async () => {
   window.location.href = "/";
 });
 
+function siteDisplayName(org) {
+  return org.environment === "development" ? `${org.ministry_name} (Development)` : org.ministry_name;
+}
+
 async function loadOrgSettings() {
   try { return await api("/org/settings"); }
-  catch (e) { return { ministry_name: "Mission Home", has_logo: false }; }
+  catch (e) { return { ministry_name: "Mission Home", has_logo: false, environment: "production" }; }
 }
 
 // ---------- Sign-in view ----------
@@ -286,7 +290,7 @@ function renderSignIn(org) {
   main.innerHTML = "";
   const shell = el("div", { class: "signin-shell" });
   if (org.has_logo) shell.appendChild(el("img", { class: "brand-logo-large", src: "/org/logo", alt: "" }));
-  shell.appendChild(el("h1", { text: org.ministry_name }));
+  shell.appendChild(el("h1", { text: siteDisplayName(org) }));
   shell.appendChild(el("p", { class: "lead", text: "Sign in with your username and password. We'll also send a verification link to confirm it's you." }));
 
   const feedback = el("div");
@@ -470,6 +474,7 @@ async function renderAddActivityForm(requestId, onLogged) {
   const dateInput = el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
   const attachmentField = buildAttachmentUploadField();
   const submitBtn = el("button", { class: "primary", text: "Save Activity" });
+  const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
   const scheduling = await buildStatusSchedulingSection();
 
   const form = el("form", { onsubmit: async (e) => {
@@ -525,7 +530,13 @@ async function renderAddActivityForm(requestId, onLogged) {
   ]));
   form.appendChild(attachmentField.root);
   form.appendChild(scheduling.root);
-  form.appendChild(submitBtn);
+  form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
+
+  cancelBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    form.reset();
+    feedback.innerHTML = "";
+  });
 
   const wrap = el("div");
   categoryDatalist(datalistId).then((dl) => wrap.appendChild(dl));
@@ -692,7 +703,7 @@ const REFERRAL_OPTIONS = [
   ["school", "School"], ["social_media", "Social media"], ["community_org", "Community organization"], ["other", "Other"],
 ];
 
-function renderEditIdentityForm(identityId, data, onSaved) {
+function renderEditIdentityForm(identityId, data, onSaved, onCancel) {
   const feedback = el("div");
   const firstNameInput = el("input", { type: "text", required: "true", placeholder: "First name", value: data.first_name || "" });
   const lastNameInput = el("input", { type: "text", required: "true", placeholder: "Last name", value: data.last_name || "" });
@@ -710,6 +721,7 @@ function renderEditIdentityForm(identityId, data, onSaved) {
   const referralNameInput = el("input", { type: "text", placeholder: "Name of person/org that referred them", value: data.referral_name || "" });
 
   const submitBtn = el("button", { class: "primary", text: "Save changes" });
+  const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
 
   const form = el("form", { onsubmit: async (e) => {
     e.preventDefault();
@@ -764,7 +776,12 @@ function renderEditIdentityForm(identityId, data, onSaved) {
   form.appendChild(el("div", { class: "field" }, [referral.root]));
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Referred by" }), referralNameInput]));
 
-  form.appendChild(submitBtn);
+  form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
+
+  cancelBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (onCancel) onCancel();
+  });
 
   const wrap = el("div");
   wrap.appendChild(form);
@@ -808,7 +825,7 @@ function renderAccessHistorySection(identityId) {
   return section;
 }
 
-async function renderEditActivityForm(activity, onSaved) {
+async function renderEditActivityForm(activity, onSaved, onCancel) {
   const feedback = el("div");
   const datalistId = `category-options-${_datalistCounter++}`;
   const notesField = buildNotesField(activity);
@@ -817,6 +834,7 @@ async function renderEditActivityForm(activity, onSaved) {
   const dateInput = el("input", { type: "date", value: activity.activity_date });
   const attachmentField = buildAttachmentUploadField();
   const submitBtn = el("button", { class: "primary", text: "Save Activity" });
+  const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
   const scheduling = await buildStatusSchedulingSection(activity);
 
   const form = el("form", { onsubmit: async (e) => {
@@ -868,7 +886,12 @@ async function renderEditActivityForm(activity, onSaved) {
   ]));
   form.appendChild(attachmentField.root);
   form.appendChild(scheduling.root);
-  form.appendChild(submitBtn);
+  form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
+
+  cancelBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (onCancel) onCancel();
+  });
 
   const wrap = el("div");
   categoryDatalist(datalistId).then((dl) => wrap.appendChild(dl));
@@ -939,7 +962,10 @@ function renderActivityRow(a, canEdit, onSaved) {
       const wasHidden = editWrap.classList.contains("hidden");
       editWrap.classList.toggle("hidden");
       if (wasHidden && editWrap.children.length === 0) {
-        editWrap.appendChild(await renderEditActivityForm(a, onSaved));
+        editWrap.appendChild(await renderEditActivityForm(a, onSaved, () => {
+          editWrap.innerHTML = "";
+          editWrap.classList.add("hidden");
+        }));
       }
     });
     row.appendChild(editToggle);
@@ -965,7 +991,7 @@ function formatChecklist(values) {
   return values.map((v) => (v.startsWith("other:") ? v.slice(6) : v.replace(/_/g, " "))).join(", ");
 }
 
-function renderNewRequestForm(identityId, onCreated) {
+function renderNewRequestForm(identityId, onCreated, onCancel) {
   const feedback = el("div");
   const typeInput = el("input", { type: "text", required: "true", placeholder: "What kind of assistance is being requested?" });
   const situationInput = el("textarea", { placeholder: "Their situation, in their own words" });
@@ -975,6 +1001,7 @@ function renderNewRequestForm(identityId, onCreated) {
   const helperRelInput = el("input", { type: "text", placeholder: "Helper's relationship to applicant" });
   const paperFormField = buildAttachmentUploadField("Attach the intake paper form (if available)");
   const submitBtn = el("button", { class: "primary", text: "Create request" });
+  const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
 
   const form = el("form", { onsubmit: async (e) => {
     e.preventDefault();
@@ -1015,7 +1042,12 @@ function renderNewRequestForm(identityId, onCreated) {
     el("div", { class: "field" }, [el("label", { text: "Helper contact" }), helperContactInput]),
     el("div", { class: "field" }, [el("label", { text: "Relationship" }), helperRelInput]),
   ]));
-  form.appendChild(submitBtn);
+  form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
+
+  cancelBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (onCancel) onCancel();
+  });
 
   const wrap = el("div");
   wrap.appendChild(form);
@@ -1068,7 +1100,7 @@ function formatRequestStatus(status) {
   return found ? found[1] : status;
 }
 
-function renderEditRequestForm(req, onSaved) {
+function renderEditRequestForm(req, onSaved, onCancel) {
   const feedback = el("div");
   const typeInput = el("input", { type: "text", required: "true" });
   typeInput.value = req.assistance_type || "";
@@ -1083,6 +1115,7 @@ function renderEditRequestForm(req, onSaved) {
   const helperRelInput = el("input", { type: "text", placeholder: "Helper's relationship to applicant" });
   helperRelInput.value = req.helper_relationship || "";
   const submitBtn = el("button", { class: "primary", text: "Save" });
+  const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
 
   const form = el("form", { onsubmit: async (e) => {
     e.preventDefault();
@@ -1124,7 +1157,12 @@ function renderEditRequestForm(req, onSaved) {
     el("div", { class: "field" }, [el("label", { text: "Helper contact" }), helperContactInput]),
     el("div", { class: "field" }, [el("label", { text: "Relationship" }), helperRelInput]),
   ]));
-  form.appendChild(submitBtn);
+  form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
+
+  cancelBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (onCancel) onCancel();
+  });
 
   const wrap = el("div");
   wrap.appendChild(form);
@@ -1240,6 +1278,9 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
             expandLink.textContent = req.assistance_type || "Hidden";
             const dateSpan = summaryRow.querySelector(".req-date");
             if (dateSpan) dateSpan.textContent = req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014";
+            editWrap.innerHTML = "";
+            editWrap.classList.add("hidden");
+          }, () => {
             editWrap.innerHTML = "";
             editWrap.classList.add("hidden");
           }));
@@ -1468,7 +1509,9 @@ async function renderPersonDetail(identityId, onBack) {
     const editToggle = el("button", { class: "link-btn", text: "Edit" });
     const editWrap = el("div", { class: "hidden" });
     editToggle.addEventListener("click", () => editWrap.classList.toggle("hidden"));
-    editWrap.appendChild(renderEditIdentityForm(identityId, data, refresh));
+    editWrap.appendChild(renderEditIdentityForm(identityId, data, refresh, () => {
+      editWrap.classList.add("hidden");
+    }));
     detailsBody.appendChild(editToggle);
     detailsBody.appendChild(editWrap);
   }
@@ -1572,7 +1615,10 @@ async function renderPersonDetail(identityId, onBack) {
     const newReqWrap = el("div", { class: "hidden" });
     newReqToggle.addEventListener("click", () => {
       newReqWrap.classList.toggle("hidden");
-      if (newReqWrap.children.length === 0) newReqWrap.appendChild(renderNewRequestForm(identityId, refresh));
+      if (newReqWrap.children.length === 0) newReqWrap.appendChild(renderNewRequestForm(identityId, refresh, () => {
+        newReqWrap.innerHTML = "";
+        newReqWrap.classList.add("hidden");
+      }));
     });
     reqSection.appendChild(newReqToggle);
     reqSection.appendChild(newReqWrap);
@@ -1650,6 +1696,8 @@ async function renderNewPersonPage(onCreated, onBack) {
 
   const feedback = el("div");
   const submitBtn = el("button", { class: "primary", text: "Save" });
+  const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
+  cancelBtn.addEventListener("click", (e) => { e.preventDefault(); onBack(); });
 
   // Applicant Info
   const applicantSection = el("section");
@@ -1738,7 +1786,7 @@ async function renderNewPersonPage(onCreated, onBack) {
   form.appendChild(employmentSection);
   form.appendChild(householdSection);
   form.appendChild(referralSection);
-  form.appendChild(submitBtn);
+  form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
   form.appendChild(feedback);
   main.appendChild(form);
 }
@@ -2446,6 +2494,7 @@ function renderAccountSetup(user, org, onComplete) {
 
 async function boot() {
   const org = await loadOrgSettings();
+  document.title = siteDisplayName(org);
   try {
     const user = await api("/auth/me");
     if (user.needs_setup) {

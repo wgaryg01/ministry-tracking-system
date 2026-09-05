@@ -5,6 +5,7 @@ from app.db import get_db
 from app.models import User, Role, OrgSettings
 from app.permissions import require_role
 from app.audit import log_audit_event
+from app.config import settings
 
 router = APIRouter(prefix="/org", tags=["org"])
 
@@ -32,6 +33,7 @@ def get_org_settings(db: Session = Depends(get_db)):
     return {
         "ministry_name": settings_row.ministry_name,
         "has_logo": settings_row.logo_data is not None,
+        "environment": settings.environment,
     }
 
 

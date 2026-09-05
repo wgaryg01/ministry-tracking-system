@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     twilio_auth_token: str | None = None
     twilio_phone_number: str | None = None
 
+    # Shows "(Development)" next to the site name in the browser tab
+    # and header, regardless of who's logged in or what the ministry
+    # name is set to. Set ENVIRONMENT=production (or leave unset) on
+    # the real server.
+    environment: str = "production"
+
     class Config:
         env_file = ".env"
 
