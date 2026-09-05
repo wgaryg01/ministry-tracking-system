@@ -1844,7 +1844,7 @@ async function renderTeamDirectorySection() {
 
     body.appendChild(el("h2", { text: "Team directory" }));
     try {
-      const roster = await api("/users?role=teammember");
+      const roster = (await api("/users")).filter((u) => u.role !== "volunteer");
       if (roster.length === 0) {
         body.appendChild(el("div", { class: "empty-state", text: "No other team members yet." }));
       } else {
@@ -1852,7 +1852,7 @@ async function renderTeamDirectorySection() {
         for (const u of roster) {
           list.appendChild(el("div", { class: "ledger-row" }, [
             el("span", { class: "date", text: u.full_name || u.username || "\u2014" }),
-            el("span", { class: "category", text: u.email || "\u2014" }),
+            el("span", { class: "category", text: `${u.email || "\u2014"} (${roleLabel(u.role)})` }),
             el("span", { class: "amount", text: u.phone_number || "\u2014" }),
           ]));
         }
