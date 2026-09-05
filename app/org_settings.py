@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Response
 from sqlalchemy.orm import Session
+import json
+import re
 
 from app.db import get_db
 from app.models import User, Role, OrgSettings
@@ -11,6 +13,35 @@ router = APIRouter(prefix="/org", tags=["org"])
 
 ALLOWED_LOGO_TYPES = {"image/png", "image/jpeg", "image/svg+xml", "image/webp"}
 MAX_LOGO_BYTES = 2 * 1024 * 1024  # 2MB
+
+# Whitelisted CSS variable names — these get inserted directly into
+# the page's inline styles, so only known variables with values that
+# look like real hex colors are ever accepted.
+ALLOWED_THEME_VARS = {
+    "--ink", "--ink-soft", "--paper", "--paper-raised",
+    "--brass", "--brass-deep", "--slate", "--slate-deep", "--line",
+}
+HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+
+
+def _parse_theme_colors(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=400, detail="theme_colors must be valid JSON")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="theme_colors must be a JSON object")
+
+    cleaned = {}
+    for key, value in data.items():
+        if key not in ALLOWED_THEME_VARS:
+            raise HTTPException(status_code=400, detail=f"Unknown theme variable: {key}")
+        if not isinstance(value, str) or not HEX_COLOR_RE.match(value):
+            raise HTTPException(status_code=400, detail=f"Invalid color value for {key}: must be a hex color")
+        cleaned[key] = value
+    return cleaned
 
 
 def _get_or_create_settings(db: Session) -> OrgSettings:
@@ -34,6 +65,7 @@ def get_org_settings(db: Session = Depends(get_db)):
         "ministry_name": settings_row.ministry_name,
         "has_logo": settings_row.logo_data is not None,
         "environment": settings.environment,
+        "theme_colors": _parse_theme_colors(settings_row.theme_colors),
     }
 
 
@@ -48,6 +80,7 @@ def get_org_logo(db: Session = Depends(get_db)):
 @router.put("/settings")
 async def update_org_settings(
     ministry_name: str = Form(None),
+    theme_colors: str = Form(None),
     logo: UploadFile = File(None),
     current_user: User = Depends(require_role(Role.ADMIN)),
     db: Session = Depends(get_db),
@@ -58,6 +91,11 @@ async def update_org_settings(
     if ministry_name is not None and ministry_name.strip():
         settings_row.ministry_name = ministry_name.strip()
         changes.append("ministry_name")
+
+    if theme_colors is not None:
+        cleaned = _parse_theme_colors(theme_colors)
+        settings_row.theme_colors = json.dumps(cleaned) if cleaned else None
+        changes.append("theme_colors")
 
     if logo is not None:
         if logo.content_type not in ALLOWED_LOGO_TYPES:

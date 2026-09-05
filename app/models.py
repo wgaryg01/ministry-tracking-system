@@ -234,6 +234,7 @@ class OrgSettings(Base):
     ministry_name = Column(String, nullable=False, default="Ministry")
     logo_data = Column(LargeBinary, nullable=True)
     logo_content_type = Column(String, nullable=True)
+    theme_colors = Column(Text, nullable=True)  # JSON object of CSS variable name -> hex color, e.g. {"--brass": "#B9814F"}
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 

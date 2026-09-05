@@ -2851,9 +2851,26 @@ function startGlobalPresence() {
   setInterval(tick, 30000);
 }
 
+const DEV_THEME_OVERRIDE = {
+  "--brass": "#5C8770",
+  "--brass-deep": "#3E6350",
+  "--paper": "#E8EDE8",
+  "--paper-raised": "#F0F5F0",
+  "--line": "#C9D4C9",
+};
+
+function applyEnvironmentTheme(org) {
+  if (org.environment === "development") {
+    for (const [key, value] of Object.entries(DEV_THEME_OVERRIDE)) {
+      document.documentElement.style.setProperty(key, value);
+    }
+  }
+}
+
 async function boot() {
   const org = await loadOrgSettings();
   document.title = siteDisplayName(org);
+  applyEnvironmentTheme(org);
   try {
     const user = await api("/auth/me");
     if (user.needs_setup) {
