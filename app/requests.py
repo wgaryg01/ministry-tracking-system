@@ -5,13 +5,16 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, Identity, AssistanceRequest, RequestDocument, RequestVote
+from app.models import User, Role, Identity, AssistanceRequest, RequestDocument, RequestVote, ActivityRecord
 from app.permissions import require_role, can_decrypt_pii, log_pii_access
+from app.auth import get_current_user
 from app.crypto import encrypt_field, decrypt_field, encrypt_bytes, decrypt_bytes
 from app.audit import log_audit_event
 from app.notifications import notify_team_of_new_request
 
 router = APIRouter(tags=["requests"])
+
+OPEN_STATUSES = {"new", "approved", "in_progress", "on_hold"}
 
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024  # 10MB
 ALLOWED_DOCUMENT_TYPES = {
@@ -255,3 +258,56 @@ def cast_vote(
     )
 
     return {"message": "Vote recorded"}
+
+
+@router.get("/requests/open")
+def list_open_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Every request across every recipient that isn't denied, completed,
+    or canceled — the working queue. Same PII gating as everywhere
+    else: names/need are only shown if the requester can decrypt PII.
+    """
+    grant_or_true = can_decrypt_pii(current_user, db)
+    can_see_names = bool(grant_or_true)
+
+    reqs = (
+        db.query(AssistanceRequest)
+        .filter(AssistanceRequest.status.in_(OPEN_STATUSES))
+        .order_by(AssistanceRequest.acknowledged_date.desc())
+        .all()
+    )
+
+    results = []
+    for req in reqs:
+        identity = db.query(Identity).filter(Identity.id == req.identity_id).first()
+        name = None
+        assistance_type = None
+        if can_see_names and identity:
+            name = f"{decrypt_field(identity.encrypted_first_name)} {decrypt_field(identity.encrypted_last_name)}"
+            assistance_type = decrypt_field(req.encrypted_assistance_type)
+            log_pii_access(db, current_user, identity.id, None)
+
+        activities = db.query(ActivityRecord).filter(ActivityRecord.assistance_request_id == req.id).all()
+        total_amount = round(
+            sum(float(a.amount_spent) for a in activities if a.amount_spent is not None and a.payment_approved), 2
+        )
+
+        results.append({
+            "identity_id": str(req.identity_id),
+            "request_id": str(req.id),
+            "name": name,
+            "assistance_type": assistance_type,
+            "status": req.status,
+            "request_received_date": req.acknowledged_date.isoformat() if req.acknowledged_date else None,
+            "total_amount": total_amount,
+        })
+
+    log_audit_event(
+        db, current_user.id, "open_requests_listed",
+        resource_type="assistance_request", details=f"count={len(results)}",
+    )
+
+    return results

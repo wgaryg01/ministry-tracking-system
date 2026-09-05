@@ -426,8 +426,8 @@ async function renderPeopleSection(onNavigate) {
 
       const head = el("div", { class: "people-table-head" }, [
         el("span", { class: "who", text: "Recipient" }),
-        el("span", { class: "stat-col", text: "Date" }),
-        el("span", { class: "stat-col all-time", text: "Status" }),
+        el("span", { class: "date-col", text: "Date" }),
+        el("span", { class: "status-col", text: "Status" }),
       ]);
       body.appendChild(head);
 
@@ -439,8 +439,8 @@ async function renderPeopleSection(onNavigate) {
           onclick: () => onNavigate(p.identity_id),
         }, [
           el("span", { class: "who", text: label }),
-          el("span", { class: "stat-col", text: p.request_date ? formatDateDisplay(p.request_date) : "\u2014" }),
-          el("span", { class: "stat-col all-time", text: p.request_status ? formatRequestStatus(p.request_status) : "\u2014" }),
+          el("span", { class: "date-col", text: p.request_date ? formatDateDisplay(p.request_date) : "\u2014" }),
+          el("span", { class: "status-col", text: p.request_status ? formatRequestStatus(p.request_status) : "\u2014" }),
         ]);
         table.appendChild(row);
       }
@@ -1990,6 +1990,51 @@ async function renderMyInfoSection(onSaved) {
   return { toggle, body };
 }
 
+async function renderOpenRequestsPage(onNavigate, onBack) {
+  main.innerHTML = "";
+  const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
+  backLink.addEventListener("click", onBack);
+  main.appendChild(backLink);
+
+  main.appendChild(el("h1", { text: "Open Requests" }));
+  main.appendChild(el("p", { class: "lead", text: "Every request that isn't denied, completed, or canceled." }));
+
+  const body = el("div");
+  main.appendChild(body);
+
+  try {
+    const requests = await api("/requests/open");
+    if (requests.length === 0) {
+      body.appendChild(el("div", { class: "empty-state", text: "No open requests right now." }));
+      return;
+    }
+
+    const head = el("div", { class: "request-row request-row-head" }, [
+      el("span", { class: "req-date", text: "Date" }),
+      el("span", { class: "req-need", text: "Recipient / Need" }),
+      el("span", { class: "req-status", text: "Status" }),
+      el("span", { class: "req-amount", text: "Total" }),
+    ]);
+    body.appendChild(head);
+
+    for (const r of requests) {
+      const label = r.name ? `${r.name} \u2014 ${r.assistance_type || ""}` : "Hidden";
+      const row = el("div", {
+        class: "request-row clickable-row",
+        onclick: () => onNavigate(r.identity_id),
+      }, [
+        el("span", { class: "req-date", text: r.request_received_date ? formatDateDisplay(r.request_received_date) : "\u2014" }),
+        el("span", { class: "req-need", text: label }),
+        el("span", { class: "req-status", text: formatRequestStatus(r.status) }),
+        el("span", { class: "req-amount", text: money(r.total_amount) }),
+      ]);
+      body.appendChild(row);
+    }
+  } catch (err) {
+    body.appendChild(msg(err.message, "error"));
+  }
+}
+
 async function renderDashboard(user, org) {
   currentUser = user;
   currentOrg = org;
@@ -1998,6 +2043,10 @@ async function renderDashboard(user, org) {
 
   const showList = () => renderDashboard(currentUser, currentOrg);
   const showDetail = (identityId) => renderPersonDetail(identityId, showList);
+
+  const openReqBtn = el("button", { class: "secondary", text: "Open Requests" });
+  openReqBtn.addEventListener("click", () => renderOpenRequestsPage(showDetail, showList));
+  main.appendChild(openReqBtn);
 
   const myInfoFor = (label) => renderMyInfoSection(async () => {
     const updated = await api("/auth/me");
