@@ -5,8 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, MeetingNote, MeetingAttendance
-from app.permissions import require_role, can_decrypt_pii, log_pii_access
+from app.models import User, Role, MeetingNote, MeetingAttendance, AuditLog
+from app.permissions import require_role, can_decrypt_pii
 from app.auth import get_current_user
 from app.crypto import encrypt_field, decrypt_field
 from app.audit import log_audit_event
@@ -77,10 +77,16 @@ def list_meetings(
     can_see_pii = bool(can_decrypt_pii(current_user, db))
     meetings = db.query(MeetingNote).order_by(MeetingNote.meeting_datetime.desc()).all()
 
-    if can_see_pii:
-        for m in meetings:
-            if m.encrypted_raw_transcript:
-                log_pii_access(db, current_user, m.id, None)
+    for m in meetings:
+        log_audit_event(
+            db, current_user.id, "meeting_viewed",
+            resource_type="meeting_note", resource_id=m.id,
+        )
+        if can_see_pii and m.encrypted_raw_transcript:
+            log_audit_event(
+                db, current_user.id, "meeting_raw_transcript_viewed",
+                resource_type="meeting_note", resource_id=m.id,
+            )
 
     return [_meeting_out(m, db, can_see_pii) for m in meetings]
 
@@ -145,3 +151,32 @@ def update_meeting(
     )
 
     return {"message": "Meeting updated"}
+
+
+@router.get("/{meeting_id}/logs")
+def get_meeting_logs(
+    meeting_id: str,
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
+    db: Session = Depends(get_db),
+):
+    """Who viewed and edited this meeting, newest first."""
+    meeting = db.query(MeetingNote).filter(MeetingNote.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    rows = (
+        db.query(AuditLog, User.email)
+        .outerjoin(User, AuditLog.user_id == User.id)
+        .filter(AuditLog.resource_type == "meeting_note", AuditLog.resource_id == meeting_id)
+        .order_by(AuditLog.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "action": log.action,
+            "user_email": email or "System",
+            "details": log.details,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        }
+        for log, email in rows
+    ]

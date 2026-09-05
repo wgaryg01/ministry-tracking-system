@@ -789,7 +789,7 @@ function renderEditIdentityForm(identityId, data, onSaved, onCancel) {
   return wrap;
 }
 
-function renderAccessHistorySection(identityId) {
+function renderAccessHistorySection(logsEndpoint) {
   const section = el("section");
   const toggle = el("button", { class: "link-btn", text: "Show access history" });
   const body = el("div", { class: "hidden" });
@@ -801,7 +801,7 @@ function renderAccessHistorySection(identityId) {
     if (!nowHidden && !loaded) {
       loaded = true;
       try {
-        const logs = await api(`/identities/${identityId}/logs`);
+        const logs = await api(logsEndpoint);
         if (logs.length === 0) {
           body.appendChild(el("div", { class: "empty-state", text: "No recorded access yet." }));
         } else {
@@ -1626,7 +1626,7 @@ async function renderPersonDetail(identityId, onBack) {
   container.appendChild(reqSection);
 
   if (currentUser.role === "admin" || currentUser.role === "teammember") {
-    container.appendChild(renderAccessHistorySection(identityId));
+    container.appendChild(renderAccessHistorySection(`/identities/${identityId}/logs`));
   }
 }
 
@@ -2472,6 +2472,7 @@ async function renderMeetingCard(m, onChanged) {
       });
       body.appendChild(editToggle);
       body.appendChild(editWrap);
+      body.appendChild(renderAccessHistorySection(`/meetings/${m.id}/logs`));
     }
   });
 
