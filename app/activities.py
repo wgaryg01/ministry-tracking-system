@@ -102,6 +102,14 @@ def update_activity(
     activity.payment_approved = payload.payment_approved
     db.commit()
 
+    # Keep an already-created register entry's payee name in sync —
+    # otherwise a correction made here silently stops applying once
+    # the entry has already been snapshotted at approval time.
+    register_entry = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.activity_id == activity.id).first()
+    if register_entry and register_entry.payee_name != activity.payee_name:
+        register_entry.payee_name = activity.payee_name
+        db.commit()
+
     _apply_assignments_and_rules(db, activity.id, payload.assigned_user_ids, payload.notification_offsets_minutes)
 
     log_audit_event(
