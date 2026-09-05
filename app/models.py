@@ -4,6 +4,7 @@ from datetime import date, datetime
 from sqlalchemy import (
     Column,
     String,
+    Text,
     Date,
     DateTime,
     Numeric,
@@ -418,3 +419,37 @@ class RequestVote(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     assistance_request = relationship("AssistanceRequest", back_populates="votes")
+
+
+class MeetingNote(Base):
+    """
+    Team meeting minutes — two versions. The raw transcript is full
+    PII, encrypted at rest and gated the same as any other PII
+    (ADMIN/TEAMMEMBER only). The redacted transcript is stored as
+    plain text, not encrypted — it's designed to contain no PII at
+    all so DEACON (oversight) can read it. Date/time/location/summary/
+    attendance are administrative, not client PII, so they're visible
+    to every role regardless.
+    """
+    __tablename__ = "meeting_notes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    meeting_datetime = Column(DateTime, nullable=False)
+    location = Column(String, nullable=True)
+    summary = Column(Text, nullable=True)
+    redacted_transcript = Column(Text, nullable=True)
+    encrypted_raw_transcript = Column(LargeBinary, nullable=True)
+    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    attendees = relationship("MeetingAttendance", back_populates="meeting")
+
+
+class MeetingAttendance(Base):
+    __tablename__ = "meeting_attendance"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    meeting_id = Column(UUID(as_uuid=True), ForeignKey("meeting_notes.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+
+    meeting = relationship("MeetingNote", back_populates="attendees")

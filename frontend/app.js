@@ -2300,6 +2300,179 @@ async function renderOverviewReportPage(onBack) {
   await refresh();
 }
 
+function renderMeetingForm(existing, teamRoster, onSaved, onCancel) {
+  const feedback = el("div");
+  const dt = existing ? new Date(existing.meeting_datetime) : new Date();
+  const dateInput = el("input", { type: "date", value: dt.toISOString().slice(0, 10) });
+  const timeInput = el("input", { type: "time", value: dt.toTimeString().slice(0, 5) });
+  const locationInput = el("input", { type: "text", placeholder: "Location" });
+  locationInput.value = existing?.location || "";
+  const summaryInput = el("textarea", { placeholder: "Meeting summary" });
+  summaryInput.value = existing?.summary || "";
+  const redactedInput = el("textarea", { placeholder: "Redacted transcript \u2014 must contain no names or identifying details about any recipient" });
+  redactedInput.value = existing?.redacted_transcript || "";
+  const rawInput = el("textarea", { placeholder: "Raw transcript (full, unredacted) \u2014 treated as PII" });
+  rawInput.value = existing?.raw_transcript || "";
+
+  const attendeeBoxes = el("div");
+  const existingAttendeeIds = new Set(existing?.attendee_user_ids || []);
+  const checkboxes = [];
+  for (const u of teamRoster) {
+    const cb = el("input", { type: "checkbox", value: u.id });
+    if (existingAttendeeIds.has(u.id)) cb.checked = true;
+    checkboxes.push(cb);
+    const label = el("label", {}, [cb, ` ${u.full_name || u.email || u.username}`]);
+    label.style.display = "block";
+    attendeeBoxes.appendChild(label);
+  }
+
+  const submitBtn = el("button", { class: "primary", text: existing ? "Save" : "Create meeting" });
+  const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
+
+  const form = el("form", { onsubmit: async (e) => {
+    e.preventDefault();
+    submitBtn.setAttribute("disabled", "true");
+    feedback.innerHTML = "";
+    try {
+      const payload = {
+        meeting_datetime: new Date(`${dateInput.value}T${timeInput.value || "00:00"}`).toISOString(),
+        location: locationInput.value || null,
+        summary: summaryInput.value || null,
+        redacted_transcript: redactedInput.value || null,
+        raw_transcript: rawInput.value || null,
+        attendee_user_ids: checkboxes.filter((cb) => cb.checked).map((cb) => cb.value),
+      };
+      if (existing) {
+        await api(`/meetings/${existing.id}`, { method: "PUT", body: JSON.stringify(payload) });
+      } else {
+        await api("/meetings", { method: "POST", body: JSON.stringify(payload) });
+      }
+      if (onSaved) onSaved();
+    } catch (err) {
+      feedback.appendChild(msg(err.message, "error"));
+      submitBtn.removeAttribute("disabled");
+    }
+  }});
+
+  form.appendChild(el("div", { class: "field-row" }, [
+    el("div", { class: "field" }, [el("label", { text: "Date" }), dateInput]),
+    el("div", { class: "field" }, [el("label", { text: "Time" }), timeInput]),
+  ]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Location" }), locationInput]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Attendance" }), attendeeBoxes]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Meeting summary" }), summaryInput]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Redacted transcript (for oversight/Deacons)" }), redactedInput]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Raw transcript (PII \u2014 admin/teammember only)" }), rawInput]));
+  form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
+
+  cancelBtn.addEventListener("click", (e) => { e.preventDefault(); if (onCancel) onCancel(); });
+
+  const wrap = el("div");
+  wrap.appendChild(form);
+  wrap.appendChild(feedback);
+  return wrap;
+}
+
+async function renderMeetingsPage(onBack) {
+  main.innerHTML = "";
+  const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
+  backLink.addEventListener("click", onBack);
+  main.appendChild(backLink);
+
+  main.appendChild(el("h1", { text: "Meetings" }));
+
+  const body = el("div");
+
+  if (canEdit()) {
+    const newToggle = el("button", { class: "secondary", text: "+ New meeting" });
+    const newWrap = el("div", { class: "hidden" });
+    newToggle.addEventListener("click", async () => {
+      newWrap.classList.toggle("hidden");
+      if (newWrap.children.length === 0) {
+        const roster = await api("/users");
+        newWrap.appendChild(renderMeetingForm(null, roster, () => { newWrap.innerHTML = ""; newWrap.classList.add("hidden"); refresh(); }, () => {
+          newWrap.innerHTML = "";
+          newWrap.classList.add("hidden");
+        }));
+      }
+    });
+    main.appendChild(newToggle);
+    main.appendChild(newWrap);
+  }
+
+  main.appendChild(body);
+
+  async function refresh() {
+    body.innerHTML = "";
+    try {
+      const meetings = await api("/meetings");
+      if (meetings.length === 0) {
+        body.appendChild(el("div", { class: "empty-state", text: "No meetings recorded yet." }));
+        return;
+      }
+      for (const m of meetings) {
+        body.appendChild(await renderMeetingCard(m, refresh));
+      }
+    } catch (err) {
+      body.appendChild(msg(err.message, "error"));
+    }
+  }
+
+  await refresh();
+}
+
+async function renderMeetingCard(m, onChanged) {
+  const card = el("div", { class: "identity-card" });
+  const dt = new Date(m.meeting_datetime);
+  const dateLabel = formatDateDisplay(dt.toISOString().slice(0, 10));
+  const timeLabel = dt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  const toggle = el("button", { class: "link-btn", text: `${dateLabel} ${timeLabel} \u2014 ${m.location || "No location"}` });
+  card.appendChild(toggle);
+  card.appendChild(el("div", { class: "lead", text: m.summary || "No summary." }));
+  card.appendChild(el("div", { class: "lead", text: `Attendance: ${m.attendee_names.length > 0 ? m.attendee_names.join(", ") : "none recorded"}` }));
+
+  const body = el("div", { class: "hidden" });
+  card.appendChild(body);
+  let built = false;
+  toggle.addEventListener("click", async () => {
+    body.classList.toggle("hidden");
+    if (built) return;
+    built = true;
+
+    body.appendChild(el("h2", { text: "Redacted transcript" }));
+    body.appendChild(el("p", { class: "lead", style: "white-space: pre-wrap;", text: m.redacted_transcript || "No redacted transcript provided." }));
+
+    if (m.has_raw_transcript || m.raw_transcript) {
+      if (m.raw_transcript) {
+        body.appendChild(el("h2", { text: "Raw transcript" }));
+        body.appendChild(el("p", { class: "lead", style: "white-space: pre-wrap;", text: m.raw_transcript }));
+      } else {
+        body.appendChild(el("p", { class: "lead", text: "A raw transcript exists but you don't currently have permission to view it." }));
+      }
+    }
+
+    if (canEdit()) {
+      const editToggle = el("button", { class: "link-btn", text: "Edit meeting" });
+      const editWrap = el("div", { class: "hidden" });
+      editToggle.addEventListener("click", async () => {
+        editWrap.classList.toggle("hidden");
+        if (editWrap.children.length === 0) {
+          const roster = await api("/users");
+          editWrap.appendChild(renderMeetingForm(m, roster, onChanged, () => {
+            editWrap.innerHTML = "";
+            editWrap.classList.add("hidden");
+          }));
+        }
+      });
+      body.appendChild(editToggle);
+      body.appendChild(editWrap);
+    }
+  });
+
+  return card;
+}
+
 async function renderRequestListPage(title, description, endpoint, emptyText, onNavigate, onBack) {
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
@@ -2380,7 +2553,9 @@ async function renderDashboard(user, org) {
   closedReqBtn.addEventListener("click", () => renderClosedRequestsPage(showDetail, showList));
   const overviewBtn = el("button", { class: "secondary", text: "Overview" });
   overviewBtn.addEventListener("click", () => renderOverviewReportPage(showList));
-  main.appendChild(el("div", { class: "button-row" }, [openReqBtn, closedReqBtn, overviewBtn]));
+  const meetingsBtn = el("button", { class: "secondary", text: "Meetings" });
+  meetingsBtn.addEventListener("click", () => renderMeetingsPage(showList));
+  main.appendChild(el("div", { class: "button-row" }, [openReqBtn, closedReqBtn, overviewBtn, meetingsBtn]));
 
   const myInfoFor = (label) => renderMyInfoSection(async () => {
     const updated = await api("/auth/me");
