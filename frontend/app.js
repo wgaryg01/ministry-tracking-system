@@ -1070,6 +1070,8 @@ function formatRequestStatus(status) {
 
 async function renderRequestCard(req, identityId, isHidden, onChanged) {
   const card = el("div", { class: "identity-card" });
+  let voteButtonsContainer = null; // set once the vote section builds; status handler hides this if closed
+  let voteClosedMessage = null;
 
   const summaryRow = el("div", { class: "request-row" });
   summaryRow.appendChild(el("span", { class: "req-date", text: req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014" }));
@@ -1102,6 +1104,11 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
         req.status = statusSelect.value;
         statusFeedback.textContent = "Saved.";
         setTimeout(() => { statusFeedback.textContent = ""; }, 1500);
+        if (["denied", "completed", "canceled"].includes(req.status) && voteButtonsContainer) {
+          voteButtonsContainer.remove();
+          voteButtonsContainer = null;
+          if (voteClosedMessage) voteClosedMessage.textContent = "Voting is closed for this request.";
+        }
       } catch (err) {
         statusFeedback.textContent = err.message;
       }
@@ -1171,7 +1178,11 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
   if (!isHidden) {
     const voteSection = el("section");
     voteSection.appendChild(el("h2", { text: "Team vote" }));
-    voteSection.appendChild(el("p", { class: "lead", text: "Do you support this request?" }));
+
+    const votingClosed = ["denied", "completed", "canceled"].includes(req.status);
+    const closedMsg = el("p", { class: "lead", text: votingClosed ? "Voting is closed for this request." : "Do you support this request?" });
+    voteClosedMessage = closedMsg;
+    voteSection.appendChild(closedMsg);
 
     const votersList = el("div", { class: "ledger" });
     const renderVoters = () => {
@@ -1195,37 +1206,41 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     };
     updateTally();
 
-    const yesBtn = el("button", { class: req.votes.my_vote === true ? "primary" : "secondary", text: "Yes" });
-    const noBtn = el("button", { class: req.votes.my_vote === false ? "primary" : "secondary", text: "No" });
-    const voteFeedback = el("div");
-    async function castVote(support) {
-      voteFeedback.innerHTML = "";
-      try {
-        await api(`/requests/${req.id}/vote`, { method: "PUT", body: JSON.stringify({ support }) });
-        const myName = currentUser.full_name || currentUser.email || currentUser.username;
-        const existingVoter = req.votes.voters.find((v) => v.name === myName);
-        if (req.votes.my_vote === true) req.votes.yes--;
-        if (req.votes.my_vote === false) req.votes.no--;
-        if (support) req.votes.yes++; else req.votes.no++;
-        req.votes.my_vote = support;
-        if (existingVoter) {
-          existingVoter.support = support;
-        } else {
-          req.votes.voters.push({ name: myName, support });
+    if (!votingClosed) {
+      const yesBtn = el("button", { class: req.votes.my_vote === true ? "primary" : "secondary", text: "Yes" });
+      const noBtn = el("button", { class: req.votes.my_vote === false ? "primary" : "secondary", text: "No" });
+      const voteFeedback = el("div");
+      async function castVote(support) {
+        voteFeedback.innerHTML = "";
+        try {
+          await api(`/requests/${req.id}/vote`, { method: "PUT", body: JSON.stringify({ support }) });
+          const myName = currentUser.full_name || currentUser.email || currentUser.username;
+          const existingVoter = req.votes.voters.find((v) => v.name === myName);
+          if (req.votes.my_vote === true) req.votes.yes--;
+          if (req.votes.my_vote === false) req.votes.no--;
+          if (support) req.votes.yes++; else req.votes.no++;
+          req.votes.my_vote = support;
+          if (existingVoter) {
+            existingVoter.support = support;
+          } else {
+            req.votes.voters.push({ name: myName, support });
+          }
+          yesBtn.className = support === true ? "primary" : "secondary";
+          noBtn.className = support === false ? "primary" : "secondary";
+          updateTally();
+          renderVoters();
+        } catch (err) {
+          voteFeedback.appendChild(msg(err.message, "error"));
         }
-        yesBtn.className = support === true ? "primary" : "secondary";
-        noBtn.className = support === false ? "primary" : "secondary";
-        updateTally();
-        renderVoters();
-      } catch (err) {
-        voteFeedback.appendChild(msg(err.message, "error"));
       }
-    }
-    yesBtn.addEventListener("click", () => castVote(true));
-    noBtn.addEventListener("click", () => castVote(false));
+      yesBtn.addEventListener("click", () => castVote(true));
+      noBtn.addEventListener("click", () => castVote(false));
 
-    voteSection.appendChild(el("div", { class: "field-row" }, [yesBtn, noBtn]));
-    voteSection.appendChild(voteFeedback);
+      voteButtonsContainer = el("div", { class: "field-row" }, [yesBtn, noBtn]);
+      voteSection.appendChild(voteButtonsContainer);
+      voteSection.appendChild(voteFeedback);
+    }
+
     voteSection.appendChild(voteTally);
     voteSection.appendChild(votersList);
     card.appendChild(voteSection);

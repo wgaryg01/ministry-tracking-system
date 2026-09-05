@@ -15,6 +15,7 @@ from app.notifications import notify_team_of_new_request
 router = APIRouter(tags=["requests"])
 
 OPEN_STATUSES = {"new", "approved", "in_progress", "on_hold"}
+RESOLVED_STATUSES = {"denied", "completed", "canceled"}
 
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024  # 10MB
 ALLOWED_DOCUMENT_TYPES = {
@@ -239,6 +240,9 @@ def cast_vote(
     req = db.query(AssistanceRequest).filter(AssistanceRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
+
+    if req.status in RESOLVED_STATUSES:
+        raise HTTPException(status_code=400, detail="Voting is closed for this request")
 
     vote = (
         db.query(RequestVote)
