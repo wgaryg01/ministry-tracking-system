@@ -2887,10 +2887,56 @@ function showReportIssueForm() {
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Details" }), descInput]));
   form.appendChild(submitBtn);
 
+  const issuesToggle = el("button", { class: "link-btn", text: "View all issues" });
+  const issuesBody = el("div", { class: "hidden" });
+  let issuesPage = 1;
+
+  async function loadIssuesPage() {
+    issuesBody.innerHTML = "";
+    try {
+      const data = await api(`/feedback/issues?page=${issuesPage}`);
+      if (data.issues.length === 0) {
+        issuesBody.appendChild(el("div", { class: "empty-state", text: issuesPage === 1 ? "No issues yet." : "No more issues." }));
+      } else {
+        const list = el("div", { class: "ledger" });
+        for (const iss of data.issues) {
+          list.appendChild(el("div", { class: "ledger-row" }, [
+            el("span", { class: "date", text: formatDateDisplay(iss.created_at.slice(0, 10)) }),
+            el("span", { class: "category", text: `#${iss.number} \u2014 ${iss.title}` }),
+            el("span", { class: "amount", text: iss.state === "open" ? "Open" : "Closed" }),
+          ]));
+        }
+        issuesBody.appendChild(list);
+      }
+
+      const pagerRow = el("div", { class: "button-row" });
+      const prevBtn = el("button", { class: "secondary", text: "\u2190 Previous" });
+      const nextBtn = el("button", { class: "secondary", text: "Next \u2192" });
+      if (issuesPage <= 1) prevBtn.setAttribute("disabled", "true");
+      if (!data.has_more) nextBtn.setAttribute("disabled", "true");
+      prevBtn.addEventListener("click", () => { issuesPage--; loadIssuesPage(); });
+      nextBtn.addEventListener("click", () => { issuesPage++; loadIssuesPage(); });
+      pagerRow.appendChild(prevBtn);
+      pagerRow.appendChild(nextBtn);
+      issuesBody.appendChild(pagerRow);
+    } catch (err) {
+      issuesBody.appendChild(msg(err.message, "error"));
+    }
+  }
+
+  issuesToggle.addEventListener("click", () => {
+    const nowHidden = issuesBody.classList.toggle("hidden");
+    issuesToggle.textContent = nowHidden ? "View all issues" : "Hide issues";
+    if (!nowHidden) loadIssuesPage();
+  });
+
   const body = el("div");
   body.style.padding = "16px";
   body.appendChild(form);
   body.appendChild(feedback);
+  body.appendChild(el("hr"));
+  body.appendChild(issuesToggle);
+  body.appendChild(issuesBody);
   panel.appendChild(body);
 
   overlay.appendChild(panel);
