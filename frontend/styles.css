@@ -269,6 +269,21 @@ button.secondary:hover { background: #CBC2AC; }
   flex-shrink: 0;
 }
 
+.header-user { position: relative; }
+.online-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 14px;
+  min-width: 160px;
+  z-index: 50;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
 @media print {
   .identity-card, .totals-strip, .people-table, .ledger, .request-row,
   .file-popup-overlay,

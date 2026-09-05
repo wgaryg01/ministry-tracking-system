@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, MagicLinkToken
+from app.models import User, MagicLinkToken, Role
 from app.email import send_magic_link_email, send_invitation_email, EmailSendError
 from app.sms import send_sms, SmsSendError
 from app.session import create_session_token, read_session_token, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS
@@ -260,3 +260,36 @@ def get_me(current_user: User = Depends(get_current_user)):
         "username": current_user.username,
         "needs_setup": not bool(current_user.username and current_user.password_hash),
     }
+
+
+ONLINE_THRESHOLD_SECONDS = 90  # ~3x the ~30s heartbeat interval, tolerates a couple missed beats
+
+
+@router.post("/heartbeat")
+def send_global_heartbeat(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Site-wide "who's online" — separate from per-record presence.
+    Called continuously in the background while the app is open,
+    regardless of which page is showing.
+    """
+    current_user.last_active_at = datetime.utcnow()
+    db.commit()
+
+    cutoff = datetime.utcnow() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS)
+    others = (
+        db.query(User)
+        .filter(User.id != current_user.id, User.last_active_at != None, User.last_active_at >= cutoff)
+        .all()
+    )
+    return {
+        "others_online": [
+            {"name": u.full_name or u.email or u.username, "role": _role_label(u.role)} for u in others
+        ]
+    }
+
+
+def _role_label(role: Role) -> str:
+    return "deacon" if role == Role.VOLUNTEER else role.value

@@ -60,6 +60,11 @@ class User(Base):
     notify_email = Column(Boolean, nullable=False, default=True)
     notify_sms = Column(Boolean, nullable=False, default=False)
 
+    # Site-wide "who's online" — separate from per-record presence
+    # (RecordPresence). Updated by a global heartbeat while the app
+    # is open, regardless of which page is showing.
+    last_active_at = Column(DateTime, nullable=True)
+
 
 class MagicLinkToken(Base):
     __tablename__ = "magic_link_tokens"

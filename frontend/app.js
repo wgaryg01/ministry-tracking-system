@@ -2241,6 +2241,8 @@ async function renderOverviewReportPage(onBack) {
   main.appendChild(backLink);
 
   main.appendChild(el("h1", { text: "Overview" }));
+  const topRefreshBtn = el("button", { class: "secondary", text: "Refresh" });
+  main.appendChild(topRefreshBtn);
 
   const today = new Date();
   const currentFy = fiscalYearOf(today);
@@ -2327,6 +2329,7 @@ async function renderOverviewReportPage(onBack) {
   }
 
   runBtn.addEventListener("click", refresh);
+  topRefreshBtn.addEventListener("click", refresh);
   await refresh();
 }
 
@@ -2414,6 +2417,9 @@ async function renderMeetingsPage(onBack) {
   main.appendChild(backLink);
 
   main.appendChild(el("h1", { text: "Meetings" }));
+  const refreshBtn = el("button", { class: "secondary", text: "Refresh" });
+  refreshBtn.addEventListener("click", () => refresh());
+  main.appendChild(refreshBtn);
 
   const body = el("div");
 
@@ -2516,42 +2522,50 @@ async function renderRequestListPage(title, description, endpoint, emptyText, on
   main.appendChild(backLink);
 
   main.appendChild(el("h1", { text: title }));
+  const refreshBtn = el("button", { class: "secondary", text: "Refresh" });
+  main.appendChild(refreshBtn);
   main.appendChild(el("p", { class: "lead", text: description }));
 
   const body = el("div");
   main.appendChild(body);
 
-  try {
-    const requests = await api(endpoint);
-    if (requests.length === 0) {
-      body.appendChild(el("div", { class: "empty-state", text: emptyText }));
-      return;
-    }
+  async function refresh() {
+    body.innerHTML = "";
+    try {
+      const requests = await api(endpoint);
+      if (requests.length === 0) {
+        body.appendChild(el("div", { class: "empty-state", text: emptyText }));
+        return;
+      }
 
-    const head = el("div", { class: "request-row request-row-head" }, [
-      el("span", { class: "req-date", text: "Date" }),
-      el("span", { class: "req-need", text: "Recipient / Need" }),
-      el("span", { class: "req-status", text: "Status" }),
-      el("span", { class: "req-amount", text: "Total" }),
-    ]);
-    body.appendChild(head);
-
-    for (const r of requests) {
-      const label = r.name ? `${r.name} \u2014 ${r.assistance_type || ""}` : "Hidden";
-      const row = el("div", {
-        class: "request-row clickable-row",
-        onclick: () => onNavigate(r.identity_id),
-      }, [
-        el("span", { class: "req-date", text: r.request_received_date ? formatDateDisplay(r.request_received_date) : "\u2014" }),
-        el("span", { class: "req-need", text: label }),
-        el("span", { class: "req-status", text: formatRequestStatus(r.status) }),
-        el("span", { class: "req-amount", text: money(r.total_amount) }),
+      const head = el("div", { class: "request-row request-row-head" }, [
+        el("span", { class: "req-date", text: "Date" }),
+        el("span", { class: "req-need", text: "Recipient / Need" }),
+        el("span", { class: "req-status", text: "Status" }),
+        el("span", { class: "req-amount", text: "Total" }),
       ]);
-      body.appendChild(row);
+      body.appendChild(head);
+
+      for (const r of requests) {
+        const label = r.name ? `${r.name} \u2014 ${r.assistance_type || ""}` : "Hidden";
+        const row = el("div", {
+          class: "request-row clickable-row",
+          onclick: () => onNavigate(r.identity_id),
+        }, [
+          el("span", { class: "req-date", text: r.request_received_date ? formatDateDisplay(r.request_received_date) : "\u2014" }),
+          el("span", { class: "req-need", text: label }),
+          el("span", { class: "req-status", text: formatRequestStatus(r.status) }),
+          el("span", { class: "req-amount", text: money(r.total_amount) }),
+        ]);
+        body.appendChild(row);
+      }
+    } catch (err) {
+      body.appendChild(msg(err.message, "error"));
     }
-  } catch (err) {
-    body.appendChild(msg(err.message, "error"));
   }
+
+  refreshBtn.addEventListener("click", refresh);
+  await refresh();
 }
 
 async function renderOpenRequestsPage(onNavigate, onBack) {
@@ -2704,6 +2718,41 @@ function renderAccountSetup(user, org, onComplete) {
 
 // ---------- Boot ----------
 
+let _globalPresenceStarted = false;
+
+function startGlobalPresence() {
+  if (_globalPresenceStarted) return;
+  _globalPresenceStarted = true;
+
+  const headerUser = document.querySelector(".header-user");
+  const signOutBtn = document.getElementById("sign-out-btn");
+  const onlineToggle = el("button", { class: "link-btn", text: "" });
+  const onlineDropdown = el("div", { class: "hidden online-dropdown" });
+  headerUser.insertBefore(onlineDropdown, signOutBtn);
+  headerUser.insertBefore(onlineToggle, onlineDropdown);
+
+  onlineToggle.addEventListener("click", () => onlineDropdown.classList.toggle("hidden"));
+
+  async function tick() {
+    try {
+      const data = await api("/auth/heartbeat", { method: "POST" });
+      const others = data.others_online;
+      onlineToggle.textContent = `${others.length + 1} online`;
+      onlineDropdown.innerHTML = "";
+      if (others.length === 0) {
+        onlineDropdown.appendChild(el("div", { class: "lead", text: "Just you right now." }));
+      }
+      for (const o of others) {
+        onlineDropdown.appendChild(el("div", { class: "lead", text: `${o.name} (${o.role})` }));
+      }
+    } catch (e) {
+      // Best-effort — never disrupt the app over a failed heartbeat.
+    }
+  }
+  tick();
+  setInterval(tick, 30000);
+}
+
 async function boot() {
   const org = await loadOrgSettings();
   document.title = siteDisplayName(org);
@@ -2712,6 +2761,7 @@ async function boot() {
     if (user.needs_setup) {
       renderAccountSetup(user, org, () => boot());
     } else {
+      startGlobalPresence();
       await renderDashboard(user, org);
     }
   } catch (e) {
