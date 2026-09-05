@@ -2704,7 +2704,7 @@ async function renderDashboard(user, org) {
   overviewBtn.addEventListener("click", () => renderOverviewReportPage(showList));
   const meetingsBtn = el("button", { class: "secondary", text: "Meetings" });
   meetingsBtn.addEventListener("click", () => renderMeetingsPage(showList));
-  main.appendChild(el("div", { class: "button-row" }, [recipientListBtn, requestsVotesBtn, overviewBtn, meetingsBtn]));
+  main.appendChild(el("div", { class: "button-row nav-row" }, [recipientListBtn, requestsVotesBtn, overviewBtn, meetingsBtn]));
 
   const myInfoFor = (label) => renderMyInfoSection(async () => {
     const updated = await api("/auth/me");
@@ -2718,7 +2718,7 @@ async function renderDashboard(user, org) {
     const myInfo = await myInfoFor();
 
     const section = el("section");
-    section.appendChild(el("div", { class: "button-row" }, [newPersonBtn, manageTeam.toggle, myInfo.toggle]));
+    section.appendChild(el("div", { class: "button-row nav-row" }, [newPersonBtn, manageTeam.toggle, myInfo.toggle]));
     section.appendChild(manageTeam.body);
     section.appendChild(myInfo.body);
     main.appendChild(section);
@@ -2730,7 +2730,7 @@ async function renderDashboard(user, org) {
     const myInfo = await myInfoFor();
 
     const section = el("section");
-    section.appendChild(el("div", { class: "button-row" }, [newPersonBtn, directory.toggle, myInfo.toggle]));
+    section.appendChild(el("div", { class: "button-row nav-row" }, [newPersonBtn, directory.toggle, myInfo.toggle]));
     section.appendChild(directory.body);
     section.appendChild(myInfo.body);
     main.appendChild(section);
@@ -2738,7 +2738,7 @@ async function renderDashboard(user, org) {
   if (user.role === "volunteer") {
     const myInfo = await myInfoFor();
     const section = el("section");
-    section.appendChild(el("div", { class: "button-row" }, [myInfo.toggle]));
+    section.appendChild(el("div", { class: "button-row nav-row" }, [myInfo.toggle]));
     section.appendChild(myInfo.body);
     main.appendChild(section);
   }
