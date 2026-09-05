@@ -376,9 +376,14 @@ button.secondary:hover { background: #CBC2AC; }
   /* The request summary row got crowded once quick-log/view-activities
      buttons were added — let it wrap, put each action button on its
      own line, and drop the column header row since alignment stops
-     meaning anything once the row wraps. */
+     meaning anything once the row wraps. The Open/Closed Requests
+     list reuses these same classes with up to 5 columns (Date/Need/
+     Status/Votes/Total), which is even less likely to fit one line —
+     so every direct child stacks to its own full-width line here,
+     not just link buttons, avoiding the narrow-column
+     character-by-character wrapping that a squeezed flex:1 column
+     causes. */
   .request-row { flex-wrap: wrap; row-gap: 6px; }
-  .request-row > button.link-btn { flex: 0 0 100%; text-align: left; }
-  .req-status { width: auto; }
+  .request-row > * { flex: 1 1 100%; text-align: left; }
   .request-row-head { display: none; }
 }
