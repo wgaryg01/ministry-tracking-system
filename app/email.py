@@ -38,6 +38,20 @@ def send_invitation_email(to_email: str, link: str) -> None:
     )
 
 
+def send_password_reset_email(to_email: str, link: str) -> None:
+    _send(
+        to_email,
+        subject="Password reset requested",
+        body=(
+            f"An administrator has requested a password reset for your account. "
+            f"Click the link below to sign in, then set a new password from "
+            f"\"My info.\" This link expires in 15 minutes and can only be used once.\n\n{link}\n\n"
+            f"If you weren't expecting this, you can safely ignore this email — "
+            f"your password won't change unless you click the link and set a new one."
+        ),
+    )
+
+
 def _send(to_email: str, subject: str, body: str) -> None:
     msg = EmailMessage()
     msg["Subject"] = subject

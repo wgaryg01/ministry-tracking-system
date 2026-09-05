@@ -2006,11 +2006,31 @@ function renderManageEditForm(u, onSaved) {
   saveBtn.addEventListener("click", (e) => { e.preventDefault(); submitUpdate(u.is_active); });
   removeBtn.addEventListener("click", (e) => { e.preventDefault(); submitUpdate(!u.is_active); });
 
+  const resetBtn = el("button", { class: "secondary", text: "Send password reset" });
+  const resetFeedback = el("div");
+  resetBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    resetFeedback.innerHTML = "";
+    resetBtn.setAttribute("disabled", "true");
+    try {
+      await api(`/users/${u.id}/send-password-reset`, { method: "POST" });
+      resetFeedback.appendChild(msg("Reset link sent.", "success"));
+    } catch (err) {
+      resetFeedback.appendChild(msg(err.message, "error"));
+    } finally {
+      resetBtn.removeAttribute("disabled");
+    }
+  });
+
   const wrap = el("div");
   wrap.appendChild(el("h3", { text: "Role & term" }));
   wrap.appendChild(el("div", { class: "field" }, [el("label", { text: "Role" }), roleSelect]));
   wrap.appendChild(termFields);
   wrap.appendChild(saveBtn);
+  wrap.appendChild(el("h3", { text: "Password" }));
+  wrap.appendChild(el("p", { class: "lead", text: "Sends them a fresh sign-in link (same mechanism as normal sign-in) \u2014 once they're in, they can set a new password from My Info without needing the old one." }));
+  wrap.appendChild(resetBtn);
+  wrap.appendChild(resetFeedback);
   wrap.appendChild(el("h3", { text: "Account status" }));
   wrap.appendChild(el("p", { class: "lead", text: u.is_active
     ? "Deactivate immediately, regardless of term dates. They'll be signed out and blocked from logging in right away."

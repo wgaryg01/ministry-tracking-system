@@ -340,3 +340,44 @@ def manage_user(
     )
 
     return {"message": "User updated"}
+
+
+@router.post("/{user_id}/send-password-reset")
+def send_password_reset(
+    user_id: str,
+    current_user: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    """
+    Sends the user a fresh sign-in link, same underlying mechanism as
+    a normal magic-link sign-in — once they're in, they can set a new
+    password from "My info" with no need to know the old one (see
+    set_my_password). This is the whole "reset," there's no separate
+    reset-token system to build.
+    """
+    if user_id == str(current_user.id):
+        raise HTTPException(status_code=400, detail="Use My Info to reset your own password")
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not target.is_active:
+        raise HTTPException(status_code=400, detail="This account is deactivated")
+    if not target.email and not target.phone_number:
+        raise HTTPException(status_code=400, detail="This user has no email or phone number on file")
+
+    target.locked_until = None
+    target.failed_login_attempts = 0
+    db.commit()
+
+    try:
+        issue_magic_link(db, target, reset=True, also_sms=target.notify_sms)
+    except EmailSendError as e:
+        raise HTTPException(status_code=502, detail=f"Couldn't send the reset link: {e}")
+
+    log_audit_event(
+        db, current_user.id, "password_reset_sent",
+        resource_type="user", resource_id=target.id,
+    )
+
+    return {"message": "Password reset link sent"}

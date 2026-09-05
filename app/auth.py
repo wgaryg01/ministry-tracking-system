@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import User, MagicLinkToken, Role
-from app.email import send_magic_link_email, send_invitation_email, EmailSendError
+from app.email import send_magic_link_email, send_invitation_email, send_password_reset_email, EmailSendError
 from app.sms import send_sms, SmsSendError
 from app.session import create_session_token, read_session_token, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS
 from app.config import settings
@@ -35,13 +35,14 @@ def _hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode()).hexdigest()
 
 
-def issue_magic_link(db: Session, user: User, invitation: bool = False, also_sms: bool = False) -> None:
+def issue_magic_link(db: Session, user: User, invitation: bool = False, reset: bool = False, also_sms: bool = False) -> None:
     """
-    Shared by: (a) first-time invitation links, and (b) the second
-    factor sent after a successful username/password check. Both
-    create a single-use, 15-minute token — the same token is sent over
-    every requested channel, so whichever one the person actually
-    checks works interchangeably. `invitation` only changes the email
+    Shared by: (a) first-time invitation links, (b) the second
+    factor sent after a successful username/password check, and
+    (c) an admin-triggered password reset. Each creates a single-use,
+    15-minute token — the same token is sent over every requested
+    channel, so whichever one the person actually checks works
+    interchangeably. `invitation`/`reset` only change the email
     template; `also_sms` additionally texts the same link if the user
     has opted into SMS and Twilio is configured. If the account has no
     email at all (invited by phone number only), the SMS becomes the
@@ -60,6 +61,8 @@ def issue_magic_link(db: Session, user: User, invitation: bool = False, also_sms
     if user.email:
         if invitation:
             send_invitation_email(user.email, link)
+        elif reset:
+            send_password_reset_email(user.email, link)
         else:
             send_magic_link_email(user.email, link)
 
