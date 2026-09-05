@@ -14,7 +14,7 @@ def _env_subject_prefix() -> str:
 def notify_team_of_new_request(db, req: AssistanceRequest, identity: Identity, excluding_user_id) -> None:
     """
     Called right after a new AssistanceRequest is created. Notifies
-    every active TEAMMEMBER except whoever just entered the request,
+    every active ADMIN and TEAMMEMBER except whoever just entered the request,
     via whichever channels they've opted into — same email/SMS
     preference pattern as scheduled-activity reminders. Send failures
     are swallowed per-recipient so one bad address never blocks
@@ -27,23 +27,25 @@ def notify_team_of_new_request(db, req: AssistanceRequest, identity: Identity, e
     subject = f"{_env_subject_prefix()}New assistance request submitted"
     body = "A new assistance request has been submitted. Please log in to review and vote on the need."
 
-    teammembers = (
+    recipients = (
         db.query(User)
-        .filter(User.role == Role.TEAMMEMBER, User.is_active.is_(True), User.id != excluding_user_id)
+        .filter(User.role.in_([Role.TEAMMEMBER, Role.ADMIN]), User.is_active.is_(True), User.id != excluding_user_id)
         .all()
     )
 
-    for user in teammembers:
+    for user in recipients:
         if user.notify_email:
             try:
                 send_notification_email(user.email, subject, body)
-            except EmailSendError:
-                pass
+                print(f"INFO: new-request email sent to {user.email}")
+            except EmailSendError as e:
+                print(f"WARNING: new-request email FAILED for {user.email}: {e}")
         if user.notify_sms and settings.twilio_configured and user.phone_number:
             try:
                 send_sms(user.phone_number, body)
-            except SmsSendError:
-                pass
+                print(f"INFO: new-request SMS sent to {user.phone_number}")
+            except SmsSendError as e:
+                print(f"WARNING: new-request SMS FAILED for {user.phone_number}: {e}")
 
 
 def format_offset(minutes: int) -> str:

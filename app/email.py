@@ -46,7 +46,7 @@ def _send(to_email: str, subject: str, body: str) -> None:
     msg.set_content(body)
 
     try:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
             server.starttls()
             server.login(settings.smtp_username, settings.smtp_password)
             server.send_message(msg)
@@ -56,3 +56,9 @@ def _send(to_email: str, subject: str, body: str) -> None:
         raise EmailSendError("SMTP authentication failed — check SMTP_USERNAME/SMTP_PASSWORD")
     except smtplib.SMTPException as e:
         raise EmailSendError(f"Failed to send email: {e}")
+    except OSError as e:
+        # Connection refused, DNS failure, timeout, etc. — none of these
+        # are smtplib.SMTPException subclasses, so they were silently
+        # slipping past every except clause above and never becoming
+        # an EmailSendError, meaning callers never saw them at all.
+        raise EmailSendError(f"Could not connect to the mail server ({settings.smtp_host}:{settings.smtp_port}): {e}")
