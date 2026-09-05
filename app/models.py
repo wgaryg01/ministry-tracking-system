@@ -171,6 +171,12 @@ class ActivityRecord(Base):
     # unapproved amount.
     payment_approved = Column(Boolean, nullable=False, default=False)
 
+    # Who the check actually gets written to — often not the recipient
+    # (a landlord, utility company, etc.). Not treated as recipient
+    # PII, since the whole point is that the Financial Secretary needs
+    # it without needing PII access.
+    payee_name = Column(String, nullable=True)
+
     logged_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -512,6 +518,7 @@ class CheckRegisterEntry(Base):
     transaction_date = Column(Date, nullable=False)  # income: date donated; expense: date incurred (activity date)
     activity_id = Column(UUID(as_uuid=True), ForeignKey("activity_records.id"), nullable=True)
     category = Column(String, nullable=True)  # non-PII — mirrors the linked activity's category, for expenses only
+    payee_name = Column(String, nullable=True)  # who the check is written to — copied from the activity, editable here too
     status = Column(String, nullable=False, default="pending")  # only meaningful for expenses: "pending" | "paid"
     date_paid = Column(Date, nullable=True)
     check_number = Column(String, nullable=True)

@@ -76,7 +76,7 @@ def _replay_ledger(db: Session) -> dict:
                 budget_used[fy] = round(budget_used.get(fy, 0.0) + from_budget, 2)
             transactions.append({
                 "id": str(e.id), "type": "expense", "date": e.date_paid.isoformat(),
-                "amount": amount, "category": e.category, "check_number": e.check_number,
+                "amount": amount, "category": e.category, "payee_name": e.payee_name, "check_number": e.check_number,
                 "running_balance": designated_balance, "from_budget": from_budget,
             })
 
@@ -90,7 +90,7 @@ def _replay_ledger(db: Session) -> dict:
         "pending_expenses": [
             {
                 "id": str(e.id), "date": e.transaction_date.isoformat(),
-                "amount": float(e.amount), "category": e.category,
+                "amount": float(e.amount), "category": e.category, "payee_name": e.payee_name,
             }
             for e in pending_expenses
         ],
@@ -187,6 +187,40 @@ def add_income(
 class MarkPaidUpdate(BaseModel):
     date_paid: date
     check_number: str
+
+
+class PayeeNameUpdate(BaseModel):
+    payee_name: str
+
+
+@router.put("/expense/{entry_id}/payee")
+def update_payee_name(
+    entry_id: str,
+    payload: PayeeNameUpdate,
+    current_user: User = Depends(require_role(Role.ADMIN, Role.FINANCIAL_SECRETARY)),
+    db: Session = Depends(get_db),
+):
+    """
+    Corrects who a check gets written to, directly on the register
+    entry — for a spelling fix or a team mistake the Financial
+    Secretary catches before cutting the check. Works whether the
+    expense is still pending or already paid.
+    """
+    entry = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.id == entry_id, CheckRegisterEntry.entry_type == "expense").first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Expense entry not found")
+
+    old_value = entry.payee_name
+    entry.payee_name = payload.payee_name.strip() or None
+    db.commit()
+
+    log_audit_event(
+        db, current_user.id, "check_register_payee_name_corrected",
+        resource_type="check_register_entry", resource_id=entry.id,
+        details=f"'{old_value}' -> '{entry.payee_name}'",
+    )
+
+    return {"message": "Payee name updated"}
 
 
 @router.put("/expense/{entry_id}/pay")

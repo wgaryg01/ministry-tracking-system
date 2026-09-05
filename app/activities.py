@@ -37,6 +37,7 @@ class ActivityCreate(BaseModel):
     amount_spent: float | None = None
     category: str | None = None
     notes: str | None = None
+    payee_name: str | None = None  # who the check gets written to, if not the recipient
     status: str = "completed"  # "scheduled" | "completed" | "cancelled"
     scheduled_at: datetime | None = None  # required if notification offsets are given
     assigned_user_ids: list[str] = []
@@ -49,6 +50,7 @@ class ActivityUpdate(BaseModel):
     amount_spent: float | None = None
     category: str | None = None
     notes: str | None = None
+    payee_name: str | None = None
     status: str = "completed"
     scheduled_at: datetime | None = None
     assigned_user_ids: list[str] = []
@@ -93,6 +95,7 @@ def update_activity(
     activity.activity_date = payload.activity_date or activity.activity_date
     activity.amount_spent = payload.amount_spent
     activity.category = payload.category
+    activity.payee_name = payload.payee_name
     activity.encrypted_notes = encrypt_field(payload.notes) if payload.notes else None
     activity.status = payload.status
     activity.scheduled_at = payload.scheduled_at
@@ -130,6 +133,7 @@ def create_activity(
         activity_date=payload.activity_date or date_type.today(),
         amount_spent=payload.amount_spent,
         category=payload.category,
+        payee_name=payload.payee_name,
         encrypted_notes=encrypt_field(payload.notes) if payload.notes else None,
         status=payload.status,
         scheduled_at=payload.scheduled_at,
@@ -193,6 +197,7 @@ def list_activities(
             "activity_date": a.activity_date.isoformat(),
             "amount_spent": float(a.amount_spent) if a.amount_spent is not None else None,
             "category": a.category,
+            "payee_name": a.payee_name,
             "status": a.status,
             "payment_approved": a.payment_approved,
         }
@@ -359,6 +364,7 @@ def set_payment_approval(
             transaction_date=activity.activity_date,
             activity_id=activity.id,
             category=activity.category,
+            payee_name=activity.payee_name,
             status="pending",
             created_by_user_id=current_user.id,
         ))

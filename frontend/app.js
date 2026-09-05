@@ -474,6 +474,7 @@ async function renderAddActivityForm(requestId, onLogged, onDirty, onClean) {
   const notesField = buildNotesField();
   const amountInput = el("input", { type: "number", step: "0.01", min: "0", placeholder: "0.00" });
   const categoryInput = el("input", { type: "text", list: datalistId, placeholder: "e.g. groceries, utilities, rent" });
+  const payeeNameInput = el("input", { type: "text", placeholder: "e.g. landlord, utility company \u2014 if not the recipient" });
   const dateInput = el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
   const attachmentField = buildAttachmentUploadField();
   const submitBtn = el("button", { class: "primary", text: "Save Activity" });
@@ -492,6 +493,7 @@ async function renderAddActivityForm(requestId, onLogged, onDirty, onClean) {
           assistance_request_id: requestId,
           amount_spent: amountInput.value ? parseFloat(amountInput.value) : null,
           category: categoryInput.value || null,
+          payee_name: payeeNameInput.value || null,
           activity_date: dateInput.value || null,
           notes: notesField.getValue(),
           ...scheduling.getValues(),
@@ -535,6 +537,7 @@ async function renderAddActivityForm(requestId, onLogged, onDirty, onClean) {
     el("div", { class: "field" }, [el("label", { text: "Category" }), categoryInput]),
     el("div", { class: "field" }, [el("label", { text: "Amount" }), amountInput]),
   ]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Who to make the check out to" }), payeeNameInput]));
   form.appendChild(attachmentField.root);
   form.appendChild(scheduling.root);
   form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
@@ -851,6 +854,7 @@ async function renderEditActivityForm(activity, onSaved, onCancel) {
   const notesField = buildNotesField(activity);
   const amountInput = el("input", { type: "number", step: "0.01", min: "0", value: activity.amount_spent != null ? activity.amount_spent : "" });
   const categoryInput = el("input", { type: "text", list: datalistId, value: activity.category || "" });
+  const payeeNameInput = el("input", { type: "text", placeholder: "e.g. landlord, utility company \u2014 if not the recipient", value: activity.payee_name || "" });
   const dateInput = el("input", { type: "date", value: activity.activity_date });
   const attachmentField = buildAttachmentUploadField();
   const submitBtn = el("button", { class: "primary", text: "Save Activity" });
@@ -868,6 +872,7 @@ async function renderEditActivityForm(activity, onSaved, onCancel) {
           activity_date: dateInput.value || null,
           amount_spent: amountInput.value ? parseFloat(amountInput.value) : null,
           category: categoryInput.value || null,
+          payee_name: payeeNameInput.value || null,
           notes: notesField.getValue(),
           payment_approved: activity.payment_approved,
           ...scheduling.getValues(),
@@ -904,6 +909,7 @@ async function renderEditActivityForm(activity, onSaved, onCancel) {
     el("div", { class: "field" }, [el("label", { text: "Category" }), categoryInput]),
     el("div", { class: "field" }, [el("label", { text: "Amount" }), amountInput]),
   ]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Who to make the check out to" }), payeeNameInput]));
   form.appendChild(attachmentField.root);
   form.appendChild(scheduling.root);
   form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
@@ -954,7 +960,7 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed) {
 
   const row = el("div", { class: "ledger-row" }, [
     el("span", { class: "date", text: formatDateDisplay(a.activity_date) }),
-    el("span", { class: "category", text: (a.category || "\u2014") + statusSuffix }),
+    el("span", { class: "category", text: (a.category || "\u2014") + (a.payee_name ? ` \u2014 pay to: ${a.payee_name}` : "") + statusSuffix }),
     amountCol,
   ]);
 
@@ -2571,6 +2577,21 @@ async function renderCheckRegisterPage(onBack) {
           row.appendChild(el("span", { class: "date", text: formatDateDisplay(p.date) }));
           row.appendChild(el("span", { class: "category", text: p.category || "\u2014" }));
           row.appendChild(el("span", { class: "amount", text: money(p.amount) }));
+          const payeeInput = el("input", { type: "text", placeholder: "Who to make the check out to", value: p.payee_name || "" });
+          const payeeSaveBtn = el("button", { class: "secondary", text: "Save payee" });
+          const payeeFeedback = el("div");
+          payeeSaveBtn.addEventListener("click", async () => {
+            payeeFeedback.innerHTML = "";
+            try {
+              await api(`/check-register/expense/${p.id}/payee`, {
+                method: "PUT",
+                body: JSON.stringify({ payee_name: payeeInput.value }),
+              });
+              payeeFeedback.appendChild(msg("Saved.", "success"));
+            } catch (err) {
+              payeeFeedback.appendChild(msg(err.message, "error"));
+            }
+          });
           const dateePaidInput = el("input", { type: "date" });
           const checkNumInput = el("input", { type: "text", placeholder: "Check #" });
           const payBtn = el("button", { class: "secondary", text: "Mark paid" });
@@ -2589,6 +2610,11 @@ async function renderCheckRegisterPage(onBack) {
           });
           const wrap = el("div");
           wrap.appendChild(row);
+          wrap.appendChild(el("div", { class: "field-row" }, [
+            el("div", { class: "field" }, [el("label", { text: "Pay to" }), payeeInput]),
+            payeeSaveBtn,
+          ]));
+          wrap.appendChild(payeeFeedback);
           wrap.appendChild(el("div", { class: "field-row" }, [dateePaidInput, checkNumInput, payBtn]));
           wrap.appendChild(payFeedback);
           pendingSection.appendChild(wrap);
@@ -2610,7 +2636,7 @@ async function renderCheckRegisterPage(onBack) {
         ]);
         ledgerSection.appendChild(head);
         for (const t of data.transactions) {
-          const label = t.type === "income" ? "Donation" : `${t.category || "Expense"}${t.check_number ? " (Check #" + t.check_number + ")" : ""}`;
+          const label = t.type === "income" ? "Donation" : `${t.category || "Expense"}${t.payee_name ? " to " + t.payee_name : ""}${t.check_number ? " (Check #" + t.check_number + ")" : ""}`;
           ledgerSection.appendChild(el("div", { class: "report-row" }, [
             el("span", { class: "report-period", text: `${formatDateDisplay(t.date)} \u2014 ${label}` }),
             el("span", { class: "report-num", text: (t.type === "income" ? "+" : "-") + money(t.amount) }),

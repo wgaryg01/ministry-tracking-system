@@ -187,6 +187,7 @@ def _activity_out(a: ActivityRecord, can_see_pii: bool) -> dict:
         "activity_date": a.activity_date.isoformat(),
         "amount_spent": float(a.amount_spent) if a.amount_spent is not None else None,
         "category": a.category,
+        "payee_name": a.payee_name,
         "status": a.status,
         "scheduled_at": a.scheduled_at.isoformat() if a.scheduled_at else None,
         "payment_approved": a.payment_approved,
