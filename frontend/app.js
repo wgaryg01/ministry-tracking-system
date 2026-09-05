@@ -969,7 +969,7 @@ function renderNewRequestForm(identityId, onCreated) {
   const feedback = el("div");
   const typeInput = el("input", { type: "text", required: "true", placeholder: "What kind of assistance is being requested?" });
   const situationInput = el("textarea", { placeholder: "Their situation, in their own words" });
-  const receivedDateInput = el("input", { type: "date" });
+  const receivedDateInput = el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
   const helperNameInput = el("input", { type: "text", placeholder: "Helper's name" });
   const helperContactInput = el("input", { type: "text", placeholder: "Helper's phone or email" });
   const helperRelInput = el("input", { type: "text", placeholder: "Helper's relationship to applicant" });
@@ -1068,10 +1068,76 @@ function formatRequestStatus(status) {
   return found ? found[1] : status;
 }
 
+function renderEditRequestForm(req, onSaved) {
+  const feedback = el("div");
+  const typeInput = el("input", { type: "text", required: "true" });
+  typeInput.value = req.assistance_type || "";
+  const situationInput = el("textarea", {});
+  situationInput.value = req.situation_description || "";
+  const receivedDateInput = el("input", { type: "date" });
+  if (req.request_received_date) receivedDateInput.value = req.request_received_date;
+  const helperNameInput = el("input", { type: "text", placeholder: "Helper's name" });
+  helperNameInput.value = req.helper_name || "";
+  const helperContactInput = el("input", { type: "text", placeholder: "Helper's phone or email" });
+  helperContactInput.value = req.helper_contact || "";
+  const helperRelInput = el("input", { type: "text", placeholder: "Helper's relationship to applicant" });
+  helperRelInput.value = req.helper_relationship || "";
+  const submitBtn = el("button", { class: "primary", text: "Save" });
+
+  const form = el("form", { onsubmit: async (e) => {
+    e.preventDefault();
+    submitBtn.setAttribute("disabled", "true");
+    feedback.innerHTML = "";
+    try {
+      await api(`/requests/${req.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          assistance_type: typeInput.value,
+          situation_description: situationInput.value || null,
+          status: req.status,
+          request_received_date: receivedDateInput.value || null,
+          helper_name: helperNameInput.value || null,
+          helper_contact: helperContactInput.value || null,
+          helper_relationship: helperRelInput.value || null,
+        }),
+      });
+      // Update in place — no full-page refresh needed.
+      req.assistance_type = typeInput.value;
+      req.situation_description = situationInput.value || null;
+      req.request_received_date = receivedDateInput.value || null;
+      req.helper_name = helperNameInput.value || null;
+      req.helper_contact = helperContactInput.value || null;
+      req.helper_relationship = helperRelInput.value || null;
+      if (onSaved) onSaved();
+    } catch (err) {
+      feedback.appendChild(msg(err.message, "error"));
+      submitBtn.removeAttribute("disabled");
+    }
+  }});
+
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Assistance requested" }), typeInput]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Situation" }), situationInput]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Request received date" }), receivedDateInput]));
+  form.appendChild(el("p", { class: "lead", text: "If someone helped complete this request:" }));
+  form.appendChild(el("div", { class: "field-row" }, [
+    el("div", { class: "field" }, [el("label", { text: "Helper name" }), helperNameInput]),
+    el("div", { class: "field" }, [el("label", { text: "Helper contact" }), helperContactInput]),
+    el("div", { class: "field" }, [el("label", { text: "Relationship" }), helperRelInput]),
+  ]));
+  form.appendChild(submitBtn);
+
+  const wrap = el("div");
+  wrap.appendChild(form);
+  wrap.appendChild(feedback);
+  return wrap;
+}
+
 async function renderRequestCard(req, identityId, isHidden, onChanged) {
   const card = el("div", { class: "identity-card" });
   let voteButtonsContainer = null; // set once the vote section builds; status handler hides this if closed
   let voteClosedMessage = null;
+  let editRequestToggle = null;
+  let editRequestWrap = null;
 
   const summaryRow = el("div", { class: "request-row" });
   summaryRow.appendChild(el("span", { class: "req-date", text: req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014" }));
@@ -1079,7 +1145,8 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
   const expandLink = el("button", { class: "link-btn req-need", text: req.assistance_type || "Hidden" });
   summaryRow.appendChild(expandLink);
 
-  if (canEdit() && !isHidden) {
+  const alreadyClosed = ["denied", "completed", "canceled"].includes(req.status) && currentUser.role !== "admin";
+  if (canEdit() && !isHidden && !alreadyClosed) {
     const statusSelect = el("select", { class: "req-status" }, REQUEST_STATUS_OPTIONS.map(([v, l]) => el("option", { value: v, text: l })));
     statusSelect.value = req.status;
     const statusFeedback = el("span", { class: "req-status-feedback" });
@@ -1104,10 +1171,21 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
         req.status = statusSelect.value;
         statusFeedback.textContent = "Saved.";
         setTimeout(() => { statusFeedback.textContent = ""; }, 1500);
-        if (["denied", "completed", "canceled"].includes(req.status) && voteButtonsContainer) {
+        const nowClosed = ["denied", "completed", "canceled"].includes(req.status);
+        if (nowClosed && voteButtonsContainer) {
           voteButtonsContainer.remove();
           voteButtonsContainer = null;
           if (voteClosedMessage) voteClosedMessage.textContent = "Voting is closed for this request.";
+        }
+        if (nowClosed && currentUser.role !== "admin") {
+          // The request just closed — swap the editable dropdown for
+          // plain text and pull the Edit control, matching what a
+          // fresh page load would show for an already-closed request.
+          // Admin keeps both regardless, per their status override.
+          statusSelect.replaceWith(el("span", { class: "req-status", text: formatRequestStatus(req.status) }));
+          statusFeedback.remove();
+          if (editRequestToggle) editRequestToggle.remove();
+          if (editRequestWrap) editRequestWrap.remove();
         }
       } catch (err) {
         statusFeedback.textContent = err.message;
@@ -1119,6 +1197,8 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     summaryRow.appendChild(el("span", { class: "req-status", text: formatRequestStatus(req.status) }));
   }
 
+  const isClosed = ["denied", "completed", "canceled"].includes(req.status) && currentUser.role !== "admin";
+
   summaryRow.appendChild(el("span", { class: "req-amount", text: money(req.total_amount) }));
 
   const viewActivitiesToggle = el("button", { class: "link-btn", text: "View activities" });
@@ -1129,21 +1209,54 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
   const body = el("div", { class: "hidden" });
   card.appendChild(body);
 
-  let built = false;
-  expandLink.addEventListener("click", async () => {
+  expandLink.addEventListener("click", () => {
     body.classList.toggle("hidden");
-    if (built) return;
-    built = true;
+  });
 
-    if (!isHidden) {
-      body.appendChild(el("dl", {}, [
+  if (!isHidden) {
+    const detailsWrap = el("div");
+    function renderDetailsDl() {
+      detailsWrap.innerHTML = "";
+      detailsWrap.appendChild(el("dl", {}, [
         el("dt", { text: "Situation" }), el("dd", { text: req.situation_description || "\u2014" }),
         el("dt", { text: "Request received" }), el("dd", { text: req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014" }),
         el("dt", { text: "Helper" }), el("dd", { text: req.helper_name ? `${req.helper_name} \u2014 ${req.helper_contact || ""} (${req.helper_relationship || ""})` : "\u2014" }),
       ]));
+    }
+    renderDetailsDl();
+    body.appendChild(detailsWrap);
 
-      const docSection = el("section");
-      docSection.appendChild(el("h2", { text: "Documents" }));
+    let editRequestBtn = null;
+    const editWrap = el("div", { class: "hidden" });
+    if (canEdit() && !isClosed) {
+      editRequestBtn = el("button", { class: "link-btn", text: "Edit request" });
+      editRequestBtn.addEventListener("click", () => {
+        editWrap.classList.toggle("hidden");
+        if (editWrap.children.length === 0) {
+          editWrap.appendChild(renderEditRequestForm(req, () => {
+            renderDetailsDl();
+            expandLink.textContent = req.assistance_type || "Hidden";
+            const dateSpan = summaryRow.querySelector(".req-date");
+            if (dateSpan) dateSpan.textContent = req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014";
+            editWrap.innerHTML = "";
+            editWrap.classList.add("hidden");
+          }));
+        }
+      });
+      body.appendChild(editRequestBtn);
+      body.appendChild(editWrap);
+    } else if (isClosed) {
+      body.appendChild(el("p", { class: "lead", text: "This request is closed and can no longer be edited." }));
+    }
+    editRequestToggle = editRequestBtn;
+    editRequestWrap = editWrap;
+
+    const docSection = el("section");
+    docSection.appendChild(el("h2", { text: "Documents" }));
+    let docsBuilt = false;
+    async function buildDocs() {
+      if (docsBuilt) return;
+      docsBuilt = true;
       if (req.documents.length === 0) {
         docSection.appendChild(el("div", { class: "empty-state", text: "No documents attached." }));
       } else {
@@ -1168,9 +1281,10 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
       if (canEdit()) {
         docSection.appendChild(renderDocumentUploadForm(req.id, onChanged));
       }
-      body.appendChild(docSection);
     }
-  });
+    buildDocs();
+    body.appendChild(docSection);
+  }
 
   // Votes are always visible (not tucked behind a click) and sit
   // structurally between the request details and the activities —
@@ -1271,11 +1385,14 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     activitySection.appendChild(list);
     activitiesBody.appendChild(activitySection);
 
-    if (canEdit()) {
+    const requestClosed = ["denied", "completed", "canceled"].includes(req.status);
+    if (canEdit() && !requestClosed) {
       const addSection = el("section");
       addSection.appendChild(el("h2", { text: "Add activity" }));
       addSection.appendChild(await renderAddActivityForm(req.id, onChanged));
       activitiesBody.appendChild(addSection);
+    } else if (requestClosed) {
+      activitiesBody.appendChild(el("p", { class: "lead", text: "This request is closed \u2014 activities can no longer be added." }));
     }
   });
 

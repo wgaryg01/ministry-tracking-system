@@ -119,6 +119,9 @@ def create_activity(
     if not req:
         raise HTTPException(status_code=404, detail="Assistance request not found")
 
+    if req.status in ("denied", "completed", "canceled"):
+        raise HTTPException(status_code=400, detail="This request is closed \u2014 activities can no longer be added")
+
     _validate_scheduling(payload.status, payload.scheduled_at, payload.notification_offsets_minutes)
 
     activity = ActivityRecord(

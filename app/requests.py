@@ -99,6 +99,9 @@ def update_request(
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
 
+    if req.status in RESOLVED_STATUSES and current_user.role != Role.ADMIN:
+        raise HTTPException(status_code=400, detail="This request is closed and can no longer be edited")
+
     req.encrypted_assistance_type = encrypt_field(payload.assistance_type)
     req.encrypted_situation_description = encrypt_field(payload.situation_description)
     _validate_status(payload.status)
