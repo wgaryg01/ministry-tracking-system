@@ -353,6 +353,15 @@ button.secondary:hover { background: #CBC2AC; }
   font-size: 0.95rem;
   color: var(--ink);
 }
+
+.ledger-row-btn {
+  cursor: pointer;
+  background: none;
+  border-left: none; border-right: none; border-top: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
 .people-row:hover { background: var(--paper-raised); }
 .clickable-row { cursor: pointer; }
 .clickable-row:hover { background: var(--paper-raised); }

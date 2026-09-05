@@ -6,7 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, Identity, Address, AuditLog, ActivityRecord, HouseholdMember, AssistanceRequest, RecordPresence
+from app.models import User, Role, Identity, Address, AuditLog, ActivityRecord, HouseholdMember, AssistanceRequest, RecordPresence, PiiAccessLog
 from app.permissions import require_role, can_decrypt_pii, log_pii_access
 from app.auth import get_current_user
 from app.crypto import encrypt_field, decrypt_field, blind_index, encode_checklist, decode_checklist
@@ -244,6 +244,60 @@ def remove_household_member(
     log_audit_event(db, current_user.id, "household_member_removed", resource_type="identity", resource_id=identity_id)
 
     return {"message": "Household member removed"}
+
+
+@router.get("/access-logs")
+def list_all_access_logs(
+    page: int = 1,
+    per_page: int = 50,
+    current_user: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    """
+    Every PII-access event system-wide, newest first — who looked at
+    which recipient's data, and when. Admin-only. Registered before
+    the /{identity_id} route below on purpose: a bare GET here would
+    otherwise be swallowed by that route treating "access-logs" as if
+    it were an identity's id.
+    """
+    if page < 1:
+        page = 1
+    if per_page not in (25, 50, 100):
+        per_page = 50
+
+    total_count = db.query(PiiAccessLog).count()
+    rows = (
+        db.query(PiiAccessLog, User, Identity)
+        .join(User, PiiAccessLog.user_id == User.id)
+        .join(Identity, PiiAccessLog.identity_id == Identity.id)
+        .order_by(PiiAccessLog.accessed_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+
+    results = []
+    for log, user, identity in rows:
+        results.append({
+            "accessed_at": log.accessed_at.isoformat() if log.accessed_at else None,
+            "user_name": user.full_name or user.email or user.username,
+            "identity_id": str(identity.id),
+            "recipient_name": f"{decrypt_field(identity.encrypted_first_name)} {decrypt_field(identity.encrypted_last_name)}",
+            "via_elevation": log.via_elevation,
+        })
+
+    log_audit_event(
+        db, current_user.id, "access_logs_viewed",
+        resource_type="pii_access_log", details=f"page={page} count={len(results)}",
+    )
+
+    return {
+        "logs": results,
+        "page": page,
+        "per_page": per_page,
+        "total_count": total_count,
+        "total_pages": max(1, (total_count + per_page - 1) // per_page),
+    }
 
 
 @router.get("/{identity_id}")

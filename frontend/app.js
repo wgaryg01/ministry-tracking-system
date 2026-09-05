@@ -2335,6 +2335,70 @@ async function renderRequestsAndVotesPage(onNavigate, onBack) {
   await refresh();
 }
 
+async function renderAccessLogsPage(onNavigate, onBack) {
+  main.innerHTML = "";
+  const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
+  backLink.addEventListener("click", onBack);
+  main.appendChild(backLink);
+
+  main.appendChild(el("h1", { text: "Access Logs" }));
+  const refreshBtn = el("button", { class: "secondary", text: "Refresh" });
+  main.appendChild(refreshBtn);
+  main.appendChild(el("p", { class: "lead", text: "Every time a recipient's PII was decrypted, system-wide \u2014 who looked, and when." }));
+
+  let page = 1;
+  const body = el("div");
+  main.appendChild(body);
+  const pagerRow = el("div", { class: "button-row" });
+  main.appendChild(pagerRow);
+
+  async function refresh() {
+    body.innerHTML = "";
+    pagerRow.innerHTML = "";
+    try {
+      const data = await api(`/identities/access-logs?page=${page}&per_page=50`);
+      if (data.logs.length === 0) {
+        body.appendChild(el("div", { class: "empty-state", text: "No access recorded yet." }));
+        return;
+      }
+
+      const head = el("div", { class: "ledger-row" }, [
+        el("span", { class: "date", text: "When" }),
+        el("span", { class: "category", text: "Recipient" }),
+        el("span", { class: "amount", text: "Viewed by" }),
+      ]);
+      body.appendChild(head);
+
+      for (const log of data.logs) {
+        const row = el("button", {
+          class: "ledger-row ledger-row-btn",
+          onclick: () => onNavigate(log.identity_id),
+        }, [
+          el("span", { class: "date", text: formatDateTimeDisplay(log.accessed_at) }),
+          el("span", { class: "category", text: log.recipient_name }),
+          el("span", { class: "amount", text: log.user_name + (log.via_elevation ? " (elevated)" : "") }),
+        ]);
+        body.appendChild(row);
+      }
+
+      pagerRow.appendChild(el("p", { class: "lead", text: `Page ${data.page} of ${data.total_pages} \u2014 ${data.total_count} total` }));
+      const prevBtn = el("button", { class: "secondary", text: "\u2190 Previous" });
+      const nextBtn = el("button", { class: "secondary", text: "Next \u2192" });
+      if (page <= 1) prevBtn.setAttribute("disabled", "true");
+      if (page >= data.total_pages) nextBtn.setAttribute("disabled", "true");
+      prevBtn.addEventListener("click", () => { page--; refresh(); });
+      nextBtn.addEventListener("click", () => { page++; refresh(); });
+      pagerRow.appendChild(prevBtn);
+      pagerRow.appendChild(nextBtn);
+    } catch (err) {
+      body.appendChild(msg(err.message, "error"));
+    }
+  }
+
+  refreshBtn.addEventListener("click", refresh);
+  await refresh();
+}
+
 async function renderRecipientListPage(onNavigate, onBack) {
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
@@ -2758,11 +2822,13 @@ async function renderDashboard(user, org) {
   if (user.role === "admin") {
     const newPersonBtn = el("button", { class: "secondary", text: "+ New recipient" });
     newPersonBtn.addEventListener("click", () => renderNewPersonPage((newIdentityId) => showDetail(newIdentityId), showList));
+    const accessLogsBtn = el("button", { class: "secondary", text: "Access Logs" });
+    accessLogsBtn.addEventListener("click", () => renderAccessLogsPage(showDetail, showList));
     const manageTeam = await renderManageTeamSection();
     const myInfo = await myInfoFor();
 
     const section = el("section");
-    section.appendChild(el("div", { class: "button-row nav-row" }, [newPersonBtn, manageTeam.toggle, myInfo.toggle]));
+    section.appendChild(el("div", { class: "button-row nav-row" }, [newPersonBtn, accessLogsBtn, manageTeam.toggle, myInfo.toggle]));
     section.appendChild(manageTeam.body);
     section.appendChild(myInfo.body);
     main.appendChild(section);
