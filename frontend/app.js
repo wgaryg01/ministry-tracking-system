@@ -2248,6 +2248,68 @@ const REQUEST_STATUS_FILTER_OPTIONS = [
   ["completed", "Completed"], ["canceled", "Canceled"],
 ];
 
+async function renderRequestsAndVotesPage(onNavigate, onBack) {
+  main.innerHTML = "";
+  const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
+  backLink.addEventListener("click", onBack);
+  main.appendChild(backLink);
+
+  main.appendChild(el("h1", { text: "Requests & Votes" }));
+  const refreshBtn = el("button", { class: "secondary", text: "Refresh" });
+  main.appendChild(refreshBtn);
+  main.appendChild(el("p", { class: "lead", text: "Every request that isn't denied, completed, or canceled, with the team's vote tally." }));
+
+  let unvotedOnly = false;
+  const filterCb = el("input", { type: "checkbox" });
+  const filterLabel = el("label", { class: "checkbox-label" }, [filterCb, "Show only requests I haven't voted on"]);
+  filterCb.addEventListener("change", () => { unvotedOnly = filterCb.checked; refresh(); });
+  main.appendChild(el("div", { class: "field" }, [filterLabel]));
+
+  const body = el("div");
+  main.appendChild(body);
+
+  async function refresh() {
+    body.innerHTML = "";
+    try {
+      const params = unvotedOnly ? "?unvoted_only=true" : "";
+      const requests = await api(`/requests/open${params}`);
+      if (requests.length === 0) {
+        body.appendChild(el("div", { class: "empty-state", text: unvotedOnly ? "Nothing left for you to vote on." : "No open requests right now." }));
+        return;
+      }
+
+      const head = el("div", { class: "request-row request-row-head" }, [
+        el("span", { class: "req-date", text: "Date" }),
+        el("span", { class: "req-need", text: "Recipient / Need" }),
+        el("span", { class: "req-status", text: "Status" }),
+        el("span", { class: "req-status", text: "Votes" }),
+        el("span", { class: "req-amount", text: "Total" }),
+      ]);
+      body.appendChild(head);
+
+      for (const r of requests) {
+        const label = r.name ? `${r.name} \u2014 ${r.assistance_type || ""}` : "Hidden";
+        const row = el("div", {
+          class: "request-row clickable-row",
+          onclick: () => onNavigate(r.identity_id),
+        }, [
+          el("span", { class: "req-date", text: r.request_received_date ? formatDateDisplay(r.request_received_date) : "\u2014" }),
+          el("span", { class: "req-need", text: label }),
+          el("span", { class: "req-status", text: formatRequestStatus(r.status) }),
+          el("span", { class: "req-status", text: `Y=${r.yes_votes}/N=${r.no_votes}` }),
+          el("span", { class: "req-amount", text: money(r.total_amount) }),
+        ]);
+        body.appendChild(row);
+      }
+    } catch (err) {
+      body.appendChild(msg(err.message, "error"));
+    }
+  }
+
+  refreshBtn.addEventListener("click", refresh);
+  await refresh();
+}
+
 async function renderRecipientListPage(onNavigate, onBack) {
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
@@ -2636,11 +2698,13 @@ async function renderDashboard(user, org) {
 
   const recipientListBtn = el("button", { class: "secondary", text: "Recipient List" });
   recipientListBtn.addEventListener("click", () => renderRecipientListPage(showDetail, showList));
+  const requestsVotesBtn = el("button", { class: "secondary", text: "Requests & Votes" });
+  requestsVotesBtn.addEventListener("click", () => renderRequestsAndVotesPage(showDetail, showList));
   const overviewBtn = el("button", { class: "secondary", text: "Overview" });
   overviewBtn.addEventListener("click", () => renderOverviewReportPage(showList));
   const meetingsBtn = el("button", { class: "secondary", text: "Meetings" });
   meetingsBtn.addEventListener("click", () => renderMeetingsPage(showList));
-  main.appendChild(el("div", { class: "button-row" }, [recipientListBtn, overviewBtn, meetingsBtn]));
+  main.appendChild(el("div", { class: "button-row" }, [recipientListBtn, requestsVotesBtn, overviewBtn, meetingsBtn]));
 
   const myInfoFor = (label) => renderMyInfoSection(async () => {
     const updated = await api("/auth/me");

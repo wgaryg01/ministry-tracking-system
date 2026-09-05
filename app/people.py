@@ -202,6 +202,94 @@ def _activity_out(a: ActivityRecord, can_see_pii: bool) -> dict:
     return out
 
 
+VALID_PER_PAGE = {10, 20, 50, 100}
+ALL_REQUEST_STATUSES = OPEN_STATUSES | RESOLVED_STATUSES
+
+
+@router.get("/roster")
+def list_recipient_roster(
+    page: int = 1,
+    per_page: int = 20,
+    request_status: str | None = None,   # a specific status, e.g. "on_hold"
+    request_scope: str | None = None,    # "open" | "closed" | None (everyone)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Every recipient, regardless of whether they have any requests yet
+    (a teammember may have been interrupted mid-intake) — paginated,
+    with a request count and total received per person. Replaces the
+    old separate Open/Closed Requests pages: request_scope covers
+    that same need as a filter here instead of a separate page.
+    """
+    if per_page not in VALID_PER_PAGE:
+        per_page = 20
+    if page < 1:
+        page = 1
+    if request_status and request_status not in ALL_REQUEST_STATUSES:
+        raise HTTPException(status_code=400, detail=f"request_status must be one of: {', '.join(sorted(ALL_REQUEST_STATUSES))}")
+    if request_scope and request_scope not in ("open", "closed"):
+        raise HTTPException(status_code=400, detail="request_scope must be 'open' or 'closed'")
+
+    can_see_names = bool(can_decrypt_pii(current_user, db))
+
+    all_identities = db.query(Identity).order_by(Identity.created_at.desc()).all()
+    all_requests = db.query(AssistanceRequest).all()
+    all_activities = db.query(ActivityRecord).all()
+
+    requests_by_identity: dict = {}
+    for req in all_requests:
+        requests_by_identity.setdefault(req.identity_id, []).append(req)
+
+    approved_amount_by_request: dict = {}
+    for a in all_activities:
+        if a.amount_spent is not None and a.payment_approved:
+            approved_amount_by_request[a.assistance_request_id] = (
+                approved_amount_by_request.get(a.assistance_request_id, 0.0) + float(a.amount_spent)
+            )
+
+    results = []
+    for identity in all_identities:
+        reqs = requests_by_identity.get(identity.id, [])
+
+        if request_status and not any(r.status == request_status for r in reqs):
+            continue
+        if request_scope == "open" and not any(r.status in OPEN_STATUSES for r in reqs):
+            continue
+        if request_scope == "closed" and not any(r.status in RESOLVED_STATUSES for r in reqs):
+            continue
+
+        name = None
+        if can_see_names:
+            name = f"{decrypt_field(identity.encrypted_first_name)} {decrypt_field(identity.encrypted_last_name)}"
+            log_pii_access(db, current_user, identity.id, None)
+
+        total_received = round(sum(approved_amount_by_request.get(r.id, 0.0) for r in reqs), 2)
+
+        results.append({
+            "identity_id": str(identity.id),
+            "name": name,
+            "request_count": len(reqs),
+            "total_received": total_received,
+        })
+
+    total_count = len(results)
+    start = (page - 1) * per_page
+    page_results = results[start:start + per_page]
+
+    log_audit_event(
+        db, current_user.id, "recipient_roster_listed",
+        resource_type="identity", details=f"page={page} per_page={per_page} count={len(page_results)}",
+    )
+
+    return {
+        "people": page_results,
+        "total_count": total_count,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": max(1, (total_count + per_page - 1) // per_page),
+    }
+
 @router.get("/{identity_id}")
 def get_person(
     identity_id: str,
@@ -338,90 +426,3 @@ def get_person(
     return {"identity_id": identity_id, **identity_out, "requests": requests_out}
 
 
-VALID_PER_PAGE = {10, 20, 50, 100}
-ALL_REQUEST_STATUSES = OPEN_STATUSES | RESOLVED_STATUSES
-
-
-@router.get("/roster")
-def list_recipient_roster(
-    page: int = 1,
-    per_page: int = 20,
-    request_status: str | None = None,   # a specific status, e.g. "on_hold"
-    request_scope: str | None = None,    # "open" | "closed" | None (everyone)
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Every recipient, regardless of whether they have any requests yet
-    (a teammember may have been interrupted mid-intake) — paginated,
-    with a request count and total received per person. Replaces the
-    old separate Open/Closed Requests pages: request_scope covers
-    that same need as a filter here instead of a separate page.
-    """
-    if per_page not in VALID_PER_PAGE:
-        per_page = 20
-    if page < 1:
-        page = 1
-    if request_status and request_status not in ALL_REQUEST_STATUSES:
-        raise HTTPException(status_code=400, detail=f"request_status must be one of: {', '.join(sorted(ALL_REQUEST_STATUSES))}")
-    if request_scope and request_scope not in ("open", "closed"):
-        raise HTTPException(status_code=400, detail="request_scope must be 'open' or 'closed'")
-
-    can_see_names = bool(can_decrypt_pii(current_user, db))
-
-    all_identities = db.query(Identity).order_by(Identity.created_at.desc()).all()
-    all_requests = db.query(AssistanceRequest).all()
-    all_activities = db.query(ActivityRecord).all()
-
-    requests_by_identity: dict = {}
-    for req in all_requests:
-        requests_by_identity.setdefault(req.identity_id, []).append(req)
-
-    approved_amount_by_request: dict = {}
-    for a in all_activities:
-        if a.amount_spent is not None and a.payment_approved:
-            approved_amount_by_request[a.assistance_request_id] = (
-                approved_amount_by_request.get(a.assistance_request_id, 0.0) + float(a.amount_spent)
-            )
-
-    results = []
-    for identity in all_identities:
-        reqs = requests_by_identity.get(identity.id, [])
-
-        if request_status and not any(r.status == request_status for r in reqs):
-            continue
-        if request_scope == "open" and not any(r.status in OPEN_STATUSES for r in reqs):
-            continue
-        if request_scope == "closed" and not any(r.status in RESOLVED_STATUSES for r in reqs):
-            continue
-
-        name = None
-        if can_see_names:
-            name = f"{decrypt_field(identity.encrypted_first_name)} {decrypt_field(identity.encrypted_last_name)}"
-            log_pii_access(db, current_user, identity.id, None)
-
-        total_received = round(sum(approved_amount_by_request.get(r.id, 0.0) for r in reqs), 2)
-
-        results.append({
-            "identity_id": str(identity.id),
-            "name": name,
-            "request_count": len(reqs),
-            "total_received": total_received,
-        })
-
-    total_count = len(results)
-    start = (page - 1) * per_page
-    page_results = results[start:start + per_page]
-
-    log_audit_event(
-        db, current_user.id, "recipient_roster_listed",
-        resource_type="identity", details=f"page={page} per_page={per_page} count={len(page_results)}",
-    )
-
-    return {
-        "people": page_results,
-        "total_count": total_count,
-        "page": page,
-        "per_page": per_page,
-        "total_pages": max(1, (total_count + per_page - 1) // per_page),
-    }
