@@ -235,6 +235,25 @@ button.secondary:hover { background: #CBC2AC; }
   border: none;
 }
 
+.report-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+.report-row-head { font-size: 0.72rem; color: var(--ink-soft); }
+.report-row .report-period { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.report-row .report-num { width: 62px; flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.report-row .report-aid { width: 100px; flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+@media (max-width: 600px) {
+  .report-row { flex-wrap: wrap; row-gap: 4px; font-size: 0.82rem; }
+  .report-row .report-period { flex: 1 1 100%; font-weight: 500; }
+  .report-row-head.report-row { display: none; }
+}
+
 @media print {
   .identity-card, .totals-strip, .people-table, .ledger, .request-row,
   #app-main, #app-header {

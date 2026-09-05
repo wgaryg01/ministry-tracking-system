@@ -2038,15 +2038,25 @@ async function renderOverviewReportPage(onBack) {
 
   const today = new Date();
   const currentFy = fiscalYearOf(today);
+  const thisFyRange = () => [fiscalYearStart(currentFy), today];
+  const lastFyRange = () => [fiscalYearStart(currentFy - 1), new Date(fiscalYearStart(currentFy).getTime() - 24 * 60 * 60 * 1000)];
 
-  const startInput = el("input", { type: "date", value: toDateInputValue(fiscalYearStart(currentFy)) });
-  const endInput = el("input", { type: "date", value: toDateInputValue(today) });
+  const startInput = el("input", { type: "date" });
+  const endInput = el("input", { type: "date" });
+  const [initStart, initEnd] = thisFyRange();
+  startInput.value = toDateInputValue(initStart);
+  endInput.value = toDateInputValue(initEnd);
+
   const runBtn = el("button", { class: "primary", text: "Run report" });
-  const lastFyBtn = el("button", { class: "secondary", text: "Last fiscal year" });
+  const fyToggleBtn = el("button", { class: "secondary", text: "Last fiscal year" });
+  let showingLastFy = false;
 
-  lastFyBtn.addEventListener("click", () => {
-    startInput.value = toDateInputValue(fiscalYearStart(currentFy - 1));
-    endInput.value = toDateInputValue(new Date(fiscalYearStart(currentFy).getTime() - 24 * 60 * 60 * 1000));
+  fyToggleBtn.addEventListener("click", () => {
+    showingLastFy = !showingLastFy;
+    const [s, e] = showingLastFy ? lastFyRange() : thisFyRange();
+    startInput.value = toDateInputValue(s);
+    endInput.value = toDateInputValue(e);
+    fyToggleBtn.textContent = showingLastFy ? "This fiscal year" : "Last fiscal year";
     refresh();
   });
 
@@ -2054,8 +2064,8 @@ async function renderOverviewReportPage(onBack) {
     el("div", { class: "field" }, [el("label", { text: "Start date" }), startInput]),
     el("div", { class: "field" }, [el("label", { text: "End date" }), endInput]),
   ]));
-  main.appendChild(el("div", { class: "button-row" }, [runBtn, lastFyBtn]));
-  main.appendChild(el("p", { class: "lead", text: "Defaults to fiscal-year-to-date (fiscal year runs September 1 \u2013 August 31)." }));
+  main.appendChild(el("div", { class: "button-row" }, [runBtn, fyToggleBtn]));
+  main.appendChild(el("p", { class: "lead", text: "Defaults to fiscal-year-to-date (fiscal year runs September 1 \u2013 August 31). Status counts reflect each request's current status, so you can see how many requests from a period ended up filled versus still pending." }));
 
   const body = el("div");
   main.appendChild(body);
@@ -2067,17 +2077,25 @@ async function renderOverviewReportPage(onBack) {
       section.appendChild(el("div", { class: "empty-state", text: "No data in this range." }));
       return section;
     }
-    const head = el("div", { class: "request-row request-row-head" }, [
-      el("span", { class: "req-need", text: "Period" }),
-      el("span", { class: "req-status", text: "Requests" }),
-      el("span", { class: "req-amount", text: "Aid given" }),
+    const head = el("div", { class: "report-row report-row-head" }, [
+      el("span", { class: "report-period", text: "Period" }),
+      el("span", { class: "report-num", text: "Open" }),
+      el("span", { class: "report-num", text: "Completed" }),
+      el("span", { class: "report-num", text: "Canceled" }),
+      el("span", { class: "report-num", text: "Denied" }),
+      el("span", { class: "report-num", text: "Total" }),
+      el("span", { class: "report-aid", text: "Aid given" }),
     ]);
     section.appendChild(head);
     for (const r of rows) {
-      section.appendChild(el("div", { class: "request-row" }, [
-        el("span", { class: "req-need", text: r.label }),
-        el("span", { class: "req-status", text: String(r.request_count) }),
-        el("span", { class: "req-amount", text: money(r.aid_total) }),
+      section.appendChild(el("div", { class: "report-row" }, [
+        el("span", { class: "report-period", text: r.label }),
+        el("span", { class: "report-num", text: String(r.open) }),
+        el("span", { class: "report-num", text: String(r.completed) }),
+        el("span", { class: "report-num", text: String(r.canceled) }),
+        el("span", { class: "report-num", text: String(r.denied) }),
+        el("span", { class: "report-num", text: String(r.total_requests) }),
+        el("span", { class: "report-aid", text: money(r.aid_total) }),
       ]));
     }
     return section;

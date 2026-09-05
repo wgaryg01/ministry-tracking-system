@@ -81,26 +81,39 @@ def overview_report(
         year_key = f"FY{fy}"
         return month_key, quarter_key, year_key
 
+    def blank_bucket():
+        return {"open": 0, "completed": 0, "canceled": 0, "denied": 0, "aid_total": 0.0}
+
     for req in requests_in_range:
         if not req.acknowledged_date:
             continue
         month_key, quarter_key, year_key = bucket(req.acknowledged_date)
+        status_key = req.status if req.status in ("completed", "canceled", "denied") else "open"
         for store, key in ((months, month_key), (quarters, quarter_key), (years, year_key)):
-            store.setdefault(key, {"request_count": 0, "aid_total": 0.0})
-            store[key]["request_count"] += 1
+            store.setdefault(key, blank_bucket())
+            store[key][status_key] += 1
 
     for a in activities_in_range:
         month_key, quarter_key, year_key = bucket(a.activity_date)
         amt = float(a.amount_spent) if a.amount_spent is not None else 0.0
         for store, key in ((months, month_key), (quarters, quarter_key), (years, year_key)):
-            store.setdefault(key, {"request_count": 0, "aid_total": 0.0})
+            store.setdefault(key, blank_bucket())
             store[key]["aid_total"] += amt
 
     def to_rows(store: dict) -> list:
-        return [
-            {"label": k, "request_count": v["request_count"], "aid_total": round(v["aid_total"], 2)}
-            for k, v in sorted(store.items())
-        ]
+        rows = []
+        for k, v in sorted(store.items()):
+            total = v["open"] + v["completed"] + v["canceled"] + v["denied"]
+            rows.append({
+                "label": k,
+                "open": v["open"],
+                "completed": v["completed"],
+                "canceled": v["canceled"],
+                "denied": v["denied"],
+                "total_requests": total,
+                "aid_total": round(v["aid_total"], 2),
+            })
+        return rows
 
     log_audit_event(
         db, current_user.id, "overview_report_viewed",
