@@ -256,6 +256,7 @@ button.secondary:hover { background: #CBC2AC; }
 
 @media print {
   .identity-card, .totals-strip, .people-table, .ledger, .request-row,
+  .file-popup-overlay,
   #app-main, #app-header {
     display: none !important;
   }
