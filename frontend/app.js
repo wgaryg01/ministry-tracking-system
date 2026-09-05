@@ -1138,6 +1138,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
   let voteClosedMessage = null;
   let editRequestToggle = null;
   let editRequestWrap = null;
+  let statusSelectRef = null; // locked while the Add-activity form is open, so an in-progress entry can't be orphaned by a status change
 
   const summaryRow = el("div", { class: "request-row" });
   summaryRow.appendChild(el("span", { class: "req-date", text: req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014" }));
@@ -1148,6 +1149,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
   const alreadyClosed = ["denied", "completed", "canceled"].includes(req.status) && currentUser.role !== "admin";
   if (canEdit() && !isHidden && !alreadyClosed) {
     const statusSelect = el("select", { class: "req-status" }, REQUEST_STATUS_OPTIONS.map(([v, l]) => el("option", { value: v, text: l })));
+    statusSelectRef = statusSelect;
     statusSelect.value = req.status;
     const statusFeedback = el("span", { class: "req-status-feedback" });
     statusSelect.addEventListener("change", async (e) => {
@@ -1369,6 +1371,15 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     e.stopPropagation();
     const nowHidden = activitiesBody.classList.toggle("hidden");
     viewActivitiesToggle.textContent = nowHidden ? "View activities" : "Hide activities";
+
+    // Lock status while the Add-activity form is open, so an
+    // in-progress entry can't be orphaned by a status change before
+    // it's saved. Unlocks again once this section is closed.
+    if (statusSelectRef) {
+      statusSelectRef.disabled = !nowHidden;
+      statusSelectRef.title = nowHidden ? "" : "Close \"View activities\" (or save your entry) to change status";
+    }
+
     if (activitiesBuilt) return;
     activitiesBuilt = true;
 
