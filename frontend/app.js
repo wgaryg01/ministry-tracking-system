@@ -466,7 +466,7 @@ async function renderPeopleSection(onNavigate) {
 
 let _datalistCounter = 0;
 
-async function renderAddActivityForm(requestId, onLogged) {
+async function renderAddActivityForm(requestId, onLogged, onDirty, onClean) {
   const feedback = el("div");
   const datalistId = `category-options-${_datalistCounter++}`;
   const notesField = buildNotesField();
@@ -520,8 +520,12 @@ async function renderAddActivityForm(requestId, onLogged) {
     form.reset();
     _categoryOptionsCache = null;
     submitBtn.removeAttribute("disabled");
+    if (onClean) onClean();
     if (onLogged) onLogged();
   }});
+
+  form.addEventListener("input", () => { if (onDirty) onDirty(); });
+  form.addEventListener("change", () => { if (onDirty) onDirty(); });
 
   form.appendChild(notesField.root);
   form.appendChild(el("div", { class: "field-row" }, [
@@ -537,6 +541,7 @@ async function renderAddActivityForm(requestId, onLogged) {
     e.preventDefault();
     form.reset();
     feedback.innerHTML = "";
+    if (onClean) onClean();
   });
 
   const wrap = el("div");
@@ -1414,14 +1419,6 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     const nowHidden = activitiesBody.classList.toggle("hidden");
     viewActivitiesToggle.textContent = nowHidden ? "View activities" : "Hide activities";
 
-    // Lock status while the Add-activity form is open, so an
-    // in-progress entry can't be orphaned by a status change before
-    // it's saved. Unlocks again once this section is closed.
-    if (statusSelectRef) {
-      statusSelectRef.disabled = !nowHidden;
-      statusSelectRef.title = nowHidden ? "" : "Close \"View activities\" (or save your entry) to change status";
-    }
-
     if (activitiesBuilt) return;
     activitiesBuilt = true;
 
@@ -1442,7 +1439,17 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     if (canEdit() && !requestClosed) {
       const addSection = el("section");
       addSection.appendChild(el("h2", { text: "Add activity" }));
-      addSection.appendChild(await renderAddActivityForm(req.id, onChanged));
+      addSection.appendChild(await renderAddActivityForm(req.id, onChanged, () => {
+        if (statusSelectRef) {
+          statusSelectRef.disabled = true;
+          statusSelectRef.title = "Finish or cancel your in-progress activity entry to change status";
+        }
+      }, () => {
+        if (statusSelectRef) {
+          statusSelectRef.disabled = false;
+          statusSelectRef.title = "";
+        }
+      }));
       activitiesBody.appendChild(addSection);
     } else if (requestClosed) {
       activitiesBody.appendChild(el("p", { class: "lead", text: "This request is closed \u2014 activities can no longer be added." }));
@@ -2234,6 +2241,107 @@ function toDateInputValue(d) {
   return d.toISOString().slice(0, 10);
 }
 
+const REQUEST_STATUS_FILTER_OPTIONS = [
+  ["", "All statuses"],
+  ["new", "New"], ["approved", "Approved"], ["denied", "Denied"],
+  ["in_progress", "In Progress"], ["on_hold", "On Hold"],
+  ["completed", "Completed"], ["canceled", "Canceled"],
+];
+
+async function renderRecipientListPage(onNavigate, onBack) {
+  main.innerHTML = "";
+  const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
+  backLink.addEventListener("click", onBack);
+  main.appendChild(backLink);
+
+  main.appendChild(el("h1", { text: "Recipient List" }));
+  const refreshBtn = el("button", { class: "secondary", text: "Refresh" });
+  main.appendChild(refreshBtn);
+  main.appendChild(el("p", { class: "lead", text: "Every recipient, including anyone with no request yet (intake may have been interrupted partway through)." }));
+
+  let page = 1;
+  let perPage = 20;
+  let requestStatus = "";
+  let requestScope = "";
+
+  const perPageSelect = el("select", {}, [10, 20, 50, 100].map((n) => el("option", { value: String(n), text: `${n} per page` })));
+  perPageSelect.value = "20";
+  const statusSelect = el("select", {}, REQUEST_STATUS_FILTER_OPTIONS.map(([v, l]) => el("option", { value: v, text: l })));
+  const scopeSelect = el("select", {}, [
+    el("option", { value: "", text: "Any request scope" }),
+    el("option", { value: "open", text: "Has an open request" }),
+    el("option", { value: "closed", text: "Has a closed request" }),
+  ]);
+
+  main.appendChild(el("div", { class: "field-row" }, [
+    el("div", { class: "field" }, [el("label", { text: "Rows per page" }), perPageSelect]),
+    el("div", { class: "field" }, [el("label", { text: "Filter by request status" }), statusSelect]),
+    el("div", { class: "field" }, [el("label", { text: "Filter by scope" }), scopeSelect]),
+  ]));
+
+  const body = el("div");
+  main.appendChild(body);
+  const pagerRow = el("div", { class: "button-row" });
+  main.appendChild(pagerRow);
+
+  async function refresh() {
+    body.innerHTML = "";
+    pagerRow.innerHTML = "";
+    try {
+      const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+      if (requestStatus) params.set("request_status", requestStatus);
+      if (requestScope) params.set("request_scope", requestScope);
+      const data = await api(`/people/roster?${params.toString()}`);
+
+      if (data.people.length === 0) {
+        body.appendChild(el("div", { class: "empty-state", text: "No recipients match this filter." }));
+        return;
+      }
+
+      const head = el("div", { class: "people-table-head" }, [
+        el("span", { class: "who", text: "Recipient" }),
+        el("span", { class: "date-col", text: "Requests" }),
+        el("span", { class: "status-col", text: "Total Received" }),
+      ]);
+      body.appendChild(head);
+
+      const table = el("div", { class: "people-table" });
+      for (const p of data.people) {
+        const row = el("button", {
+          class: "people-row",
+          onclick: () => onNavigate(p.identity_id),
+        }, [
+          el("span", { class: "who", text: p.name || "Hidden" }),
+          el("span", { class: "date-col", text: String(p.request_count) }),
+          el("span", { class: "status-col", text: money(p.total_received) }),
+        ]);
+        table.appendChild(row);
+      }
+      body.appendChild(table);
+
+      const totalPages = data.total_pages;
+      pagerRow.appendChild(el("p", { class: "lead", text: `Page ${data.page} of ${totalPages} \u2014 ${data.total_count} recipient${data.total_count !== 1 ? "s" : ""} total` }));
+      const prevBtn = el("button", { class: "secondary", text: "\u2190 Previous" });
+      const nextBtn = el("button", { class: "secondary", text: "Next \u2192" });
+      if (page <= 1) prevBtn.setAttribute("disabled", "true");
+      if (page >= totalPages) nextBtn.setAttribute("disabled", "true");
+      prevBtn.addEventListener("click", () => { page--; refresh(); });
+      nextBtn.addEventListener("click", () => { page++; refresh(); });
+      pagerRow.appendChild(prevBtn);
+      pagerRow.appendChild(nextBtn);
+    } catch (err) {
+      body.appendChild(msg(err.message, "error"));
+    }
+  }
+
+  perPageSelect.addEventListener("change", () => { perPage = parseInt(perPageSelect.value, 10); page = 1; refresh(); });
+  statusSelect.addEventListener("change", () => { requestStatus = statusSelect.value; page = 1; refresh(); });
+  scopeSelect.addEventListener("change", () => { requestScope = scopeSelect.value; page = 1; refresh(); });
+  refreshBtn.addEventListener("click", refresh);
+
+  await refresh();
+}
+
 async function renderOverviewReportPage(onBack) {
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
@@ -2515,89 +2623,6 @@ async function renderMeetingCard(m, onChanged) {
   return card;
 }
 
-async function renderRequestListPage(title, description, endpoint, emptyText, onNavigate, onBack, showUnvotedFilter) {
-  main.innerHTML = "";
-  const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
-  backLink.addEventListener("click", onBack);
-  main.appendChild(backLink);
-
-  main.appendChild(el("h1", { text: title }));
-  const refreshBtn = el("button", { class: "secondary", text: "Refresh" });
-  main.appendChild(refreshBtn);
-  main.appendChild(el("p", { class: "lead", text: description }));
-
-  let unvotedOnly = false;
-  if (showUnvotedFilter) {
-    const filterCb = el("input", { type: "checkbox" });
-    const filterLabel = el("label", { class: "checkbox-label" }, [filterCb, "Show only requests I haven't voted on"]);
-    filterCb.addEventListener("change", () => { unvotedOnly = filterCb.checked; refresh(); });
-    main.appendChild(el("div", { class: "field" }, [filterLabel]));
-  }
-
-  const body = el("div");
-  main.appendChild(body);
-
-  async function refresh() {
-    body.innerHTML = "";
-    try {
-      const params = unvotedOnly ? "?unvoted_only=true" : "";
-      const requests = await api(`${endpoint}${params}`);
-      if (requests.length === 0) {
-        body.appendChild(el("div", { class: "empty-state", text: emptyText }));
-        return;
-      }
-
-      const head = el("div", { class: "request-row request-row-head" }, [
-        el("span", { class: "req-date", text: "Date" }),
-        el("span", { class: "req-need", text: "Recipient / Need" }),
-        el("span", { class: "req-status", text: "Status" }),
-        el("span", { class: "req-status", text: "Votes" }),
-        el("span", { class: "req-amount", text: "Total" }),
-      ]);
-      body.appendChild(head);
-
-      for (const r of requests) {
-        const label = r.name ? `${r.name} \u2014 ${r.assistance_type || ""}` : "Hidden";
-        const row = el("div", {
-          class: "request-row clickable-row",
-          onclick: () => onNavigate(r.identity_id),
-        }, [
-          el("span", { class: "req-date", text: r.request_received_date ? formatDateDisplay(r.request_received_date) : "\u2014" }),
-          el("span", { class: "req-need", text: label }),
-          el("span", { class: "req-status", text: formatRequestStatus(r.status) }),
-          el("span", { class: "req-status", text: `Y=${r.yes_votes}/N=${r.no_votes}` }),
-          el("span", { class: "req-amount", text: money(r.total_amount) }),
-        ]);
-        body.appendChild(row);
-      }
-    } catch (err) {
-      body.appendChild(msg(err.message, "error"));
-    }
-  }
-
-  refreshBtn.addEventListener("click", refresh);
-  await refresh();
-}
-
-async function renderOpenRequestsPage(onNavigate, onBack) {
-  return renderRequestListPage(
-    "Open Requests",
-    "Every request that isn't denied, completed, or canceled.",
-    "/requests/open",
-    "No open requests right now.",
-    onNavigate, onBack, true,
-  );
-}
-
-async function renderClosedRequestsPage(onNavigate, onBack) {
-  return renderRequestListPage(
-    "Closed Requests",
-    "Every request that's been denied, completed, or canceled.",
-    "/requests/closed",
-    "No closed requests yet.",
-    onNavigate, onBack, false,
-  );
-}
 
 async function renderDashboard(user, org) {
   if (_presencePollInterval) { clearInterval(_presencePollInterval); _presencePollInterval = null; }
@@ -2609,15 +2634,13 @@ async function renderDashboard(user, org) {
   const showList = () => renderDashboard(currentUser, currentOrg);
   const showDetail = (identityId) => renderPersonDetail(identityId, showList);
 
-  const openReqBtn = el("button", { class: "secondary", text: "Open Requests" });
-  openReqBtn.addEventListener("click", () => renderOpenRequestsPage(showDetail, showList));
-  const closedReqBtn = el("button", { class: "secondary", text: "Closed Requests" });
-  closedReqBtn.addEventListener("click", () => renderClosedRequestsPage(showDetail, showList));
+  const recipientListBtn = el("button", { class: "secondary", text: "Recipient List" });
+  recipientListBtn.addEventListener("click", () => renderRecipientListPage(showDetail, showList));
   const overviewBtn = el("button", { class: "secondary", text: "Overview" });
   overviewBtn.addEventListener("click", () => renderOverviewReportPage(showList));
   const meetingsBtn = el("button", { class: "secondary", text: "Meetings" });
   meetingsBtn.addEventListener("click", () => renderMeetingsPage(showList));
-  main.appendChild(el("div", { class: "button-row" }, [openReqBtn, closedReqBtn, overviewBtn, meetingsBtn]));
+  main.appendChild(el("div", { class: "button-row" }, [recipientListBtn, overviewBtn, meetingsBtn]));
 
   const myInfoFor = (label) => renderMyInfoSection(async () => {
     const updated = await api("/auth/me");
