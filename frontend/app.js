@@ -864,17 +864,12 @@ function renderActivityRow(a, canEdit, onSaved) {
   const amountText = a.amount_spent != null
     ? money(a.amount_spent) + (a.payment_approved ? "" : " (quote)")
     : "\u2014";
-  const row = el("div", { class: "ledger-row" }, [
-    el("span", { class: "date", text: a.activity_date }),
-    el("span", { class: "category", text: (a.category || "\u2014") + statusSuffix }),
-    el("span", { class: "amount", text: amountText }),
-  ]);
 
-  const summaryBits = [];
+  const amountCol = el("div", { class: "amount-col" });
+  amountCol.appendChild(el("span", { class: "amount", text: amountText }));
   if (canEdit && a.amount_spent != null) {
     const approveCb = el("input", { type: "checkbox" });
     approveCb.checked = a.payment_approved;
-    const approveLabel = el("label", {}, [approveCb, " Approved to be paid"]);
     approveCb.addEventListener("change", async () => {
       approveCb.setAttribute("disabled", "true");
       try {
@@ -888,8 +883,16 @@ function renderActivityRow(a, canEdit, onSaved) {
         approveCb.removeAttribute("disabled");
       }
     });
-    summaryBits.push(el("div", { class: "lead" }, [approveLabel]));
+    amountCol.appendChild(el("label", {}, [approveCb, " Approved to be paid"]));
   }
+
+  const row = el("div", { class: "ledger-row" }, [
+    el("span", { class: "date", text: a.activity_date }),
+    el("span", { class: "category", text: (a.category || "\u2014") + statusSuffix }),
+    amountCol,
+  ]);
+
+  const summaryBits = [];
   if (a.notes) summaryBits.push(el("div", { class: "lead", text: a.notes }));
   if (a.attachments && a.attachments.length > 0) {
     const line = el("div", { class: "lead" }, ["Attachments: "]);

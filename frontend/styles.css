@@ -131,6 +131,22 @@ button.secondary:hover { background: #CBC2AC; }
 .ledger-row .date { color: var(--ink-soft); width: 92px; flex-shrink: 0; }
 .ledger-row .category { flex: 1; min-width: 0; overflow-wrap: break-word; }
 .ledger-row .amount { font-variant-numeric: tabular-nums; width: 80px; text-align: right; }
+.ledger-row .amount-col {
+  width: 130px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.ledger-row .amount-col label {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .ledger-row .who { width: 110px; text-align: right; color: var(--ink-soft); font-size: 0.85rem; }
 .empty-state { color: var(--ink-soft); padding: 24px 0; }
 
