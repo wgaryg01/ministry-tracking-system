@@ -83,7 +83,15 @@ def create_request(
         resource_type="assistance_request", resource_id=req.id, details=f"identity_id={identity.id}",
     )
 
-    notify_team_of_new_request(db, req, identity, excluding_user_id=current_user.id)
+    # Notifications are a best-effort side effect — the request itself
+    # is already safely committed above. A bug or transient failure
+    # here (bad email config, a code error, whatever) must never look
+    # like the request creation itself failed, or a client retrying
+    # after a false error creates a duplicate request.
+    try:
+        notify_team_of_new_request(db, req, identity, excluding_user_id=current_user.id)
+    except Exception as e:
+        print(f"WARNING: notify_team_of_new_request failed for request {req.id}: {e}")
 
     return {"id": str(req.id), "message": "Request created"}
 
