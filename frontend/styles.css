@@ -173,7 +173,7 @@ button.secondary:hover { background: #CBC2AC; }
   padding: 0 20px;
   text-align: center;
 }
-.signin-shell .brand-logo-large { width: 88px; height: 88px; border-radius: 50%; margin-bottom: 20px; }
+.signin-shell .brand-logo-large { width: 140px; height: 140px; border-radius: 50%; object-fit: cover; margin-bottom: 20px; }
 
 .identity-card {
   border: 1px solid var(--line);
