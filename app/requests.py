@@ -264,22 +264,13 @@ def cast_vote(
     return {"message": "Vote recorded"}
 
 
-@router.get("/requests/open")
-def list_open_requests(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Every request across every recipient that isn't denied, completed,
-    or canceled — the working queue. Same PII gating as everywhere
-    else: names/need are only shown if the requester can decrypt PII.
-    """
+def _list_requests_by_status(db: Session, current_user: User, statuses: set, audit_action: str) -> list:
     grant_or_true = can_decrypt_pii(current_user, db)
     can_see_names = bool(grant_or_true)
 
     reqs = (
         db.query(AssistanceRequest)
-        .filter(AssistanceRequest.status.in_(OPEN_STATUSES))
+        .filter(AssistanceRequest.status.in_(statuses))
         .order_by(AssistanceRequest.acknowledged_date.desc())
         .all()
     )
@@ -310,8 +301,30 @@ def list_open_requests(
         })
 
     log_audit_event(
-        db, current_user.id, "open_requests_listed",
+        db, current_user.id, audit_action,
         resource_type="assistance_request", details=f"count={len(results)}",
     )
 
     return results
+
+
+@router.get("/requests/open")
+def list_open_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Every request across every recipient that isn't denied, completed,
+    or canceled — the working queue. Same PII gating as everywhere
+    else: names/need are only shown if the requester can decrypt PII.
+    """
+    return _list_requests_by_status(db, current_user, OPEN_STATUSES, "open_requests_listed")
+
+
+@router.get("/requests/closed")
+def list_closed_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Every request that's been denied, completed, or canceled."""
+    return _list_requests_by_status(db, current_user, RESOLVED_STATUSES, "closed_requests_listed")

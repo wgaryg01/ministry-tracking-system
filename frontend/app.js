@@ -2018,22 +2018,110 @@ async function renderMyInfoSection(onSaved) {
   return { toggle, body };
 }
 
-async function renderOpenRequestsPage(onNavigate, onBack) {
+function fiscalYearOf(d) {
+  return d.getMonth() + 1 >= 9 ? d.getFullYear() + 1 : d.getFullYear();
+}
+function fiscalYearStart(fyEndingYear) {
+  return new Date(fyEndingYear - 1, 8, 1); // Sept 1 (month index 8)
+}
+function toDateInputValue(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+async function renderOverviewReportPage(onBack) {
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
   backLink.addEventListener("click", onBack);
   main.appendChild(backLink);
 
-  main.appendChild(el("h1", { text: "Open Requests" }));
-  main.appendChild(el("p", { class: "lead", text: "Every request that isn't denied, completed, or canceled." }));
+  main.appendChild(el("h1", { text: "Overview" }));
+
+  const today = new Date();
+  const currentFy = fiscalYearOf(today);
+
+  const startInput = el("input", { type: "date", value: toDateInputValue(fiscalYearStart(currentFy)) });
+  const endInput = el("input", { type: "date", value: toDateInputValue(today) });
+  const runBtn = el("button", { class: "primary", text: "Run report" });
+  const lastFyBtn = el("button", { class: "secondary", text: "Last fiscal year" });
+
+  lastFyBtn.addEventListener("click", () => {
+    startInput.value = toDateInputValue(fiscalYearStart(currentFy - 1));
+    endInput.value = toDateInputValue(new Date(fiscalYearStart(currentFy).getTime() - 24 * 60 * 60 * 1000));
+    refresh();
+  });
+
+  main.appendChild(el("div", { class: "field-row" }, [
+    el("div", { class: "field" }, [el("label", { text: "Start date" }), startInput]),
+    el("div", { class: "field" }, [el("label", { text: "End date" }), endInput]),
+  ]));
+  main.appendChild(el("div", { class: "button-row" }, [runBtn, lastFyBtn]));
+  main.appendChild(el("p", { class: "lead", text: "Defaults to fiscal-year-to-date (fiscal year runs September 1 \u2013 August 31)." }));
+
+  const body = el("div");
+  main.appendChild(body);
+
+  function buildTable(title, rows) {
+    const section = el("section");
+    section.appendChild(el("h2", { text: title }));
+    if (rows.length === 0) {
+      section.appendChild(el("div", { class: "empty-state", text: "No data in this range." }));
+      return section;
+    }
+    const head = el("div", { class: "request-row request-row-head" }, [
+      el("span", { class: "req-need", text: "Period" }),
+      el("span", { class: "req-status", text: "Requests" }),
+      el("span", { class: "req-amount", text: "Aid given" }),
+    ]);
+    section.appendChild(head);
+    for (const r of rows) {
+      section.appendChild(el("div", { class: "request-row" }, [
+        el("span", { class: "req-need", text: r.label }),
+        el("span", { class: "req-status", text: String(r.request_count) }),
+        el("span", { class: "req-amount", text: money(r.aid_total) }),
+      ]));
+    }
+    return section;
+  }
+
+  async function refresh() {
+    body.innerHTML = "";
+    try {
+      const params = new URLSearchParams({ start_date: startInput.value, end_date: endInput.value });
+      const data = await api(`/reports/overview?${params.toString()}`);
+
+      const strip = el("div", { class: "totals-strip" });
+      strip.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: "Total requests" }), el("span", { class: "value", text: String(data.total_requests) })]));
+      strip.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: "Total aid given" }), el("span", { class: "value", text: money(data.total_aid) })]));
+      body.appendChild(strip);
+
+      body.appendChild(buildTable("By month", data.months));
+      body.appendChild(buildTable("By fiscal quarter", data.quarters));
+      body.appendChild(buildTable("By fiscal year", data.years));
+    } catch (err) {
+      body.appendChild(msg(err.message, "error"));
+    }
+  }
+
+  runBtn.addEventListener("click", refresh);
+  await refresh();
+}
+
+async function renderRequestListPage(title, description, endpoint, emptyText, onNavigate, onBack) {
+  main.innerHTML = "";
+  const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
+  backLink.addEventListener("click", onBack);
+  main.appendChild(backLink);
+
+  main.appendChild(el("h1", { text: title }));
+  main.appendChild(el("p", { class: "lead", text: description }));
 
   const body = el("div");
   main.appendChild(body);
 
   try {
-    const requests = await api("/requests/open");
+    const requests = await api(endpoint);
     if (requests.length === 0) {
-      body.appendChild(el("div", { class: "empty-state", text: "No open requests right now." }));
+      body.appendChild(el("div", { class: "empty-state", text: emptyText }));
       return;
     }
 
@@ -2063,6 +2151,26 @@ async function renderOpenRequestsPage(onNavigate, onBack) {
   }
 }
 
+async function renderOpenRequestsPage(onNavigate, onBack) {
+  return renderRequestListPage(
+    "Open Requests",
+    "Every request that isn't denied, completed, or canceled.",
+    "/requests/open",
+    "No open requests right now.",
+    onNavigate, onBack,
+  );
+}
+
+async function renderClosedRequestsPage(onNavigate, onBack) {
+  return renderRequestListPage(
+    "Closed Requests",
+    "Every request that's been denied, completed, or canceled.",
+    "/requests/closed",
+    "No closed requests yet.",
+    onNavigate, onBack,
+  );
+}
+
 async function renderDashboard(user, org) {
   currentUser = user;
   currentOrg = org;
@@ -2074,7 +2182,11 @@ async function renderDashboard(user, org) {
 
   const openReqBtn = el("button", { class: "secondary", text: "Open Requests" });
   openReqBtn.addEventListener("click", () => renderOpenRequestsPage(showDetail, showList));
-  main.appendChild(openReqBtn);
+  const closedReqBtn = el("button", { class: "secondary", text: "Closed Requests" });
+  closedReqBtn.addEventListener("click", () => renderClosedRequestsPage(showDetail, showList));
+  const overviewBtn = el("button", { class: "secondary", text: "Overview" });
+  overviewBtn.addEventListener("click", () => renderOverviewReportPage(showList));
+  main.appendChild(el("div", { class: "button-row" }, [openReqBtn, closedReqBtn, overviewBtn]));
 
   const myInfoFor = (label) => renderMyInfoSection(async () => {
     const updated = await api("/auth/me");

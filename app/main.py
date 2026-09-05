@@ -12,6 +12,7 @@ from app.users import router as users_router
 from app.org_settings import router as org_settings_router
 from app.people import router as people_router
 from app.requests import router as requests_router
+from app.reports import router as reports_router
 from app.scheduler import start_scheduler
 
 app = FastAPI(title="Ministry Client Tracking System")
@@ -23,6 +24,7 @@ app.include_router(users_router)
 app.include_router(org_settings_router)
 app.include_router(people_router)
 app.include_router(requests_router)
+app.include_router(reports_router)
 
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
