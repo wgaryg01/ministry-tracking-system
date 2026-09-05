@@ -1,4 +1,4 @@
-from datetime import date as date_type
+from datetime import date as date_type, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -6,8 +6,9 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, Identity, Address, AuditLog, ActivityRecord, HouseholdMember, AssistanceRequest
+from app.models import User, Role, Identity, Address, AuditLog, ActivityRecord, HouseholdMember, AssistanceRequest, RecordPresence
 from app.permissions import require_role, can_decrypt_pii, log_pii_access
+from app.auth import get_current_user
 from app.crypto import encrypt_field, decrypt_field, blind_index, encode_checklist, decode_checklist
 from app.audit import log_audit_event
 from app.household import build_household_summary
@@ -349,3 +350,47 @@ def get_identity_logs(
         }
         for log, email in rows
     ]
+
+
+PRESENCE_STALE_AFTER_SECONDS = 45  # a bit over 2x the ~15s heartbeat interval, tolerates one missed beat
+
+
+@router.post("/{identity_id}/presence")
+def send_presence_heartbeat(
+    identity_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Upserts the caller's "I'm here" heartbeat for this recipient, then
+    returns everyone else currently viewing it (heartbeat within the
+    last ~45 seconds). Not a session log — old rows are just ignored,
+    not deleted, since only recency matters here.
+    """
+    row = (
+        db.query(RecordPresence)
+        .filter(RecordPresence.identity_id == identity_id, RecordPresence.user_id == current_user.id)
+        .first()
+    )
+    if row:
+        row.last_seen_at = datetime.utcnow()
+    else:
+        db.add(RecordPresence(identity_id=identity_id, user_id=current_user.id, last_seen_at=datetime.utcnow()))
+    db.commit()
+
+    cutoff = datetime.utcnow() - timedelta(seconds=PRESENCE_STALE_AFTER_SECONDS)
+    others = (
+        db.query(RecordPresence, User)
+        .join(User, RecordPresence.user_id == User.id)
+        .filter(
+            RecordPresence.identity_id == identity_id,
+            RecordPresence.user_id != current_user.id,
+            RecordPresence.last_seen_at >= cutoff,
+        )
+        .all()
+    )
+    return {
+        "others_present": [
+            {"name": u.full_name or u.email or u.username} for _, u in others
+        ]
+    }

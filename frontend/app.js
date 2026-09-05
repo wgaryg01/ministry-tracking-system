@@ -223,6 +223,7 @@ const main = document.getElementById("app-main");
 const header = document.getElementById("app-header");
 let currentUser = null;
 let currentOrg = null;
+let _presencePollInterval = null; // cleared/reset whenever we navigate to a different page
 
 function formatDateDisplay(isoDate) {
   if (!isoDate) return isoDate;
@@ -1452,6 +1453,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
 }
 
 async function renderPersonDetail(identityId, onBack) {
+  if (_presencePollInterval) { clearInterval(_presencePollInterval); _presencePollInterval = null; }
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
   backLink.addEventListener("click", onBack);
@@ -1474,6 +1476,34 @@ async function renderPersonDetail(identityId, onBack) {
   const refresh = () => renderPersonDetail(identityId, onBack);
 
   container.appendChild(el("h1", { text: label }));
+
+  const presenceLine = el("p", { class: "lead" });
+  container.appendChild(presenceLine);
+  const changeBanner = el("div");
+  container.appendChild(changeBanner);
+
+  const loadedSnapshot = JSON.stringify(data);
+  _presencePollInterval = setInterval(async () => {
+    try {
+      const presence = await api(`/identities/${identityId}/presence`, { method: "POST" });
+      presenceLine.textContent = presence.others_present.length > 0
+        ? `Also viewing this record right now: ${presence.others_present.map((p) => p.name).join(", ")}`
+        : "";
+
+      if (changeBanner.children.length === 0) {
+        const fresh = await api(`/people/${identityId}`);
+        if (JSON.stringify(fresh) !== loadedSnapshot) {
+          const banner = msg("This record has been updated since you loaded it.", "info");
+          const refreshBtn = el("button", { class: "secondary", text: "Refresh" });
+          refreshBtn.addEventListener("click", refresh);
+          changeBanner.appendChild(banner);
+          changeBanner.appendChild(refreshBtn);
+        }
+      }
+    } catch (e) {
+      // Presence/change checks are best-effort — never disrupt the page over a failed poll.
+    }
+  }, 15000);
 
   if (isHidden && currentUser.role !== "volunteer") {
     container.appendChild(msg("You're not currently authorized to view this person's identifying details. Request elevation to see their full record.", "info"));
@@ -2545,6 +2575,7 @@ async function renderClosedRequestsPage(onNavigate, onBack) {
 }
 
 async function renderDashboard(user, org) {
+  if (_presencePollInterval) { clearInterval(_presencePollInterval); _presencePollInterval = null; }
   currentUser = user;
   currentOrg = org;
   setHeader(user, org);

@@ -454,3 +454,19 @@ class MeetingAttendance(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     meeting = relationship("MeetingNote", back_populates="attendees")
+
+
+class RecordPresence(Base):
+    """
+    One row per (identity, user) — a lightweight heartbeat, not a
+    session log. Updated every ~15 seconds while someone has that
+    recipient's page open. A row's presence is only meaningful if
+    last_seen_at is recent (checked by the query, not by deleting old
+    rows) — this is "is X currently looking at this," not history.
+    """
+    __tablename__ = "record_presence"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    identity_id = Column(UUID(as_uuid=True), ForeignKey("identities.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
