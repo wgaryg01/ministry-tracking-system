@@ -5,10 +5,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, Identity, AssistanceRequest, RequestDocument
+from app.models import User, Role, Identity, AssistanceRequest, RequestDocument, RequestVote
 from app.permissions import require_role, can_decrypt_pii, log_pii_access
 from app.crypto import encrypt_field, decrypt_field, encrypt_bytes, decrypt_bytes
 from app.audit import log_audit_event
+from app.notifications import notify_team_of_new_request
 
 router = APIRouter(tags=["requests"])
 
@@ -49,7 +50,7 @@ def _validate_status(status: str):
 def create_request(
     identity_id: str,
     payload: AssistanceRequestCreate,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     identity = db.query(Identity).filter(Identity.id == identity_id).first()
@@ -78,6 +79,8 @@ def create_request(
         resource_type="assistance_request", resource_id=req.id, details=f"identity_id={identity.id}",
     )
 
+    notify_team_of_new_request(db, req, identity, excluding_user_id=current_user.id)
+
     return {"id": str(req.id), "message": "Request created"}
 
 
@@ -85,7 +88,7 @@ def create_request(
 def update_request(
     request_id: str,
     payload: AssistanceRequestUpdate,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     req = db.query(AssistanceRequest).filter(AssistanceRequest.id == request_id).first()
@@ -112,7 +115,7 @@ def update_request(
 async def upload_document(
     request_id: str,
     file: UploadFile = File(...),
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     req = db.query(AssistanceRequest).filter(AssistanceRequest.id == request_id).first()
@@ -190,7 +193,7 @@ def download_document(
 def delete_document(
     request_id: str,
     document_id: str,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     doc = (
@@ -211,3 +214,44 @@ def delete_document(
     )
 
     return {"message": "Document deleted"}
+
+
+class VoteUpdate(BaseModel):
+    support: bool
+
+
+@router.put("/requests/{request_id}/vote")
+def cast_vote(
+    request_id: str,
+    payload: VoteUpdate,
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
+    db: Session = Depends(get_db),
+):
+    """
+    Upserts the current user's Yes/No vote on this request — voting
+    again just changes the existing vote rather than adding a second
+    one. Restricted to ADMIN/TEAMMEMBER, since voting requires actually
+    being able to see what's being voted on.
+    """
+    req = db.query(AssistanceRequest).filter(AssistanceRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    vote = (
+        db.query(RequestVote)
+        .filter(RequestVote.assistance_request_id == request_id, RequestVote.user_id == current_user.id)
+        .first()
+    )
+    if vote:
+        vote.support = payload.support
+    else:
+        vote = RequestVote(assistance_request_id=request_id, user_id=current_user.id, support=payload.support)
+        db.add(vote)
+    db.commit()
+
+    log_audit_event(
+        db, current_user.id, "request_vote_cast",
+        resource_type="assistance_request", resource_id=request_id, details=f"support={payload.support}",
+    )
+
+    return {"message": "Vote recorded"}

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Identity, ActivityRecord, AssistanceRequest, RequestDocument, ActivityAssignment, NotificationRule
+from app.models import User, Identity, ActivityRecord, AssistanceRequest, RequestDocument, ActivityAssignment, NotificationRule, RequestVote
 from app.auth import get_current_user
 from app.permissions import can_decrypt_pii, log_pii_access
 from app.crypto import decrypt_field, decode_checklist
@@ -280,6 +280,16 @@ def get_person(
         activity_list = [_activity_out(a, can_see_pii) for a in activities]
         total_amount = round(sum(float(a.amount_spent) for a in activities if a.amount_spent is not None and a.payment_approved), 2)
 
+        votes = db.query(RequestVote).filter(RequestVote.assistance_request_id == req.id).all()
+        yes_votes = sum(1 for v in votes if v.support)
+        no_votes = sum(1 for v in votes if not v.support)
+        my_vote_row = next((v for v in votes if v.user_id == current_user.id), None)
+        vote_summary = {
+            "yes": yes_votes,
+            "no": no_votes,
+            "my_vote": my_vote_row.support if my_vote_row else None,
+        }
+
         if can_see_pii:
             documents = db.query(RequestDocument).filter(RequestDocument.assistance_request_id == req.id).all()
             req_out = {
@@ -287,6 +297,7 @@ def get_person(
                 "assistance_type": decrypt_field(req.encrypted_assistance_type),
                 "status": req.status,
                 "total_amount": total_amount,
+                "votes": vote_summary,
                 "situation_description": decrypt_field(req.encrypted_situation_description),
                 "request_received_date": req.acknowledged_date.isoformat() if req.acknowledged_date else (req.created_at.date().isoformat() if req.created_at else None),
                 "helper_name": decrypt_field(req.encrypted_helper_name),
@@ -302,6 +313,7 @@ def get_person(
                 "assistance_type": None, "situation_description": None,
                 "status": req.status,
                 "total_amount": total_amount,
+                "votes": vote_summary,
                 "request_received_date": req.acknowledged_date.isoformat() if req.acknowledged_date else (req.created_at.date().isoformat() if req.created_at else None),
                 "helper_name": None, "helper_contact": None, "helper_relationship": None,
                 "created_at": req.created_at.isoformat() if req.created_at else None,

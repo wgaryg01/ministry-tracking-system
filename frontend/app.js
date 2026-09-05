@@ -228,6 +228,14 @@ function roleLabel(role) {
   return role === "volunteer" ? "deacon" : role;
 }
 
+function canEdit() {
+  // Admin can do everything a teammember can (add/edit recipients,
+  // requests, activities, household, addresses, documents, votes) —
+  // the only thing that stays admin-exclusive is managing user
+  // accounts (invite/manage), handled separately in the dashboard.
+  return currentUser.role === "teammember" || currentUser.role === "admin";
+}
+
 function setHeader(user, org) {
   if (!user) { header.classList.add("hidden"); return; }
   header.classList.remove("hidden");
@@ -1047,7 +1055,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
   const expandLink = el("button", { class: "link-btn req-need", text: req.assistance_type || "Hidden" });
   summaryRow.appendChild(expandLink);
 
-  if (currentUser.role === "teammember" && !isHidden) {
+  if (canEdit() && !isHidden) {
     const statusSelect = el("select", { class: "req-status" }, REQUEST_STATUS_OPTIONS.map(([v, l]) => el("option", { value: v, text: l })));
     statusSelect.value = req.status;
     const statusFeedback = el("span", { class: "req-status-feedback" });
@@ -1105,6 +1113,39 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
         el("dt", { text: "Helper" }), el("dd", { text: req.helper_name ? `${req.helper_name} \u2014 ${req.helper_contact || ""} (${req.helper_relationship || ""})` : "\u2014" }),
       ]));
 
+      const voteSection = el("section");
+      voteSection.appendChild(el("h2", { text: "Team vote" }));
+      const voteTally = el("p", { class: "lead" });
+      const updateTally = () => {
+        voteTally.textContent = `${req.votes.yes} yes \u00b7 ${req.votes.no} no`;
+      };
+      updateTally();
+      voteSection.appendChild(voteTally);
+
+      const yesBtn = el("button", { class: req.votes.my_vote === true ? "primary" : "secondary", text: "Yes" });
+      const noBtn = el("button", { class: req.votes.my_vote === false ? "primary" : "secondary", text: "No" });
+      const voteFeedback = el("div");
+      async function castVote(support) {
+        voteFeedback.innerHTML = "";
+        try {
+          await api(`/requests/${req.id}/vote`, { method: "PUT", body: JSON.stringify({ support }) });
+          if (req.votes.my_vote === true) req.votes.yes--;
+          if (req.votes.my_vote === false) req.votes.no--;
+          if (support) req.votes.yes++; else req.votes.no++;
+          req.votes.my_vote = support;
+          yesBtn.className = support === true ? "primary" : "secondary";
+          noBtn.className = support === false ? "primary" : "secondary";
+          updateTally();
+        } catch (err) {
+          voteFeedback.appendChild(msg(err.message, "error"));
+        }
+      }
+      yesBtn.addEventListener("click", () => castVote(true));
+      noBtn.addEventListener("click", () => castVote(false));
+      voteSection.appendChild(el("div", { class: "field-row" }, [yesBtn, noBtn]));
+      voteSection.appendChild(voteFeedback);
+      body.appendChild(voteSection);
+
       const docSection = el("section");
       docSection.appendChild(el("h2", { text: "Documents" }));
       if (req.documents.length === 0) {
@@ -1117,7 +1158,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
             text: d.filename,
             onclick: () => showFilePopup(`/requests/${req.id}/documents/${d.id}`, d.filename, d.content_type),
           }));
-          if (currentUser.role === "teammember") {
+          if (canEdit()) {
             const delBtn = el("button", { class: "link-btn", text: "Delete" });
             delBtn.addEventListener("click", async () => {
               await api(`/requests/${req.id}/documents/${d.id}`, { method: "DELETE" });
@@ -1128,7 +1169,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
           docSection.appendChild(row);
         }
       }
-      if (currentUser.role === "teammember") {
+      if (canEdit()) {
         docSection.appendChild(renderDocumentUploadForm(req.id, onChanged));
       }
       body.appendChild(docSection);
@@ -1153,13 +1194,13 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
       list.appendChild(el("div", { class: "empty-state", text: "No activity logged yet." }));
     } else {
       for (const a of req.activities) {
-        list.appendChild(renderActivityRow(a, currentUser.role === "teammember", onChanged));
+        list.appendChild(renderActivityRow(a, canEdit(), onChanged));
       }
     }
     activitySection.appendChild(list);
     activitiesBody.appendChild(activitySection);
 
-    if (currentUser.role === "teammember") {
+    if (canEdit()) {
       const addSection = el("section");
       addSection.appendChild(el("h2", { text: "Add activity" }));
       addSection.appendChild(await renderAddActivityForm(req.id, onChanged));
@@ -1224,7 +1265,7 @@ async function renderPersonDetail(identityId, onBack) {
   ]);
   detailsBody.appendChild(card);
 
-  if (!isHidden && currentUser.role === "teammember") {
+  if (!isHidden && canEdit()) {
     const editToggle = el("button", { class: "link-btn", text: "Edit" });
     const editWrap = el("div", { class: "hidden" });
     editToggle.addEventListener("click", () => editWrap.classList.toggle("hidden"));
@@ -1248,7 +1289,7 @@ async function renderPersonDetail(identityId, onBack) {
       container.appendChild(histSection);
     }
 
-    if (currentUser.role === "teammember") {
+    if (canEdit()) {
       const moveToggle = el("button", { class: "secondary", text: "Update the address" });
       const moveWrap = el("div", { class: "hidden" });
       moveToggle.addEventListener("click", () => {
@@ -1279,7 +1320,7 @@ async function renderPersonDetail(identityId, onBack) {
           el("span", { class: "category", text: m.name + (m.relationship ? ` (${m.relationship})` : "") }),
           el("span", { class: "amount", text: m.age != null ? `Age ${m.age}` : "\u2014" }),
         ]);
-        if (currentUser.role === "teammember") {
+        if (canEdit()) {
           const removeBtn = el("button", { class: "link-btn", text: "Remove" });
           removeBtn.addEventListener("click", async () => {
             hhFeedback.innerHTML = "";
@@ -1296,7 +1337,7 @@ async function renderPersonDetail(identityId, onBack) {
       hhSection.appendChild(hhFeedback);
     }
 
-    if (currentUser.role === "teammember") {
+    if (canEdit()) {
       const addHHToggle = el("button", { class: "secondary", text: "+ Add household member" });
       const addHHWrap = el("div", { class: "hidden" });
       addHHToggle.addEventListener("click", () => {
@@ -1327,7 +1368,7 @@ async function renderPersonDetail(identityId, onBack) {
   for (const req of data.requests) {
     reqSection.appendChild(await renderRequestCard(req, identityId, isHidden, refresh));
   }
-  if (currentUser.role === "teammember") {
+  if (canEdit()) {
     const newReqToggle = el("button", { class: "secondary", text: "+ New request" });
     const newReqWrap = el("div", { class: "hidden" });
     newReqToggle.addEventListener("click", () => {
@@ -1908,12 +1949,14 @@ async function renderDashboard(user, org) {
   });
 
   if (user.role === "admin") {
+    const newPersonBtn = el("button", { class: "secondary", text: "+ New recipient" });
+    newPersonBtn.addEventListener("click", () => renderNewPersonPage((newIdentityId) => showDetail(newIdentityId), showList));
     const invite = renderInviteSection(true);
     const manageTeam = await renderManageTeamSection();
     const myInfo = await myInfoFor();
 
     const section = el("section");
-    section.appendChild(el("div", { class: "button-row" }, [invite.toggle, manageTeam.toggle, myInfo.toggle]));
+    section.appendChild(el("div", { class: "button-row" }, [newPersonBtn, invite.toggle, manageTeam.toggle, myInfo.toggle]));
     section.appendChild(invite.body);
     section.appendChild(manageTeam.body);
     section.appendChild(myInfo.body);

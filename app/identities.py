@@ -91,7 +91,7 @@ def _address_out(a: Address) -> dict:
 @router.post("")
 def create_identity(
     payload: IdentityCreate,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     identity = Identity(
@@ -132,7 +132,7 @@ def create_identity(
 def update_identity(
     identity_id: str,
     payload: IdentityUpdate,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     identity = db.query(Identity).filter(Identity.id == identity_id).first()
@@ -161,7 +161,7 @@ def update_identity(
 def record_address_change(
     identity_id: str,
     payload: AddressUpdate,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     """Records a move. Never overwrites a prior address — each call adds a new row."""
@@ -194,7 +194,7 @@ def record_address_change(
 def add_household_member(
     identity_id: str,
     payload: HouseholdMemberCreate,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     if payload.member_type not in ("child", "adult"):
@@ -226,7 +226,7 @@ def add_household_member(
 def remove_household_member(
     identity_id: str,
     member_id: str,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     member = (

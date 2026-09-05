@@ -80,7 +80,7 @@ def _apply_assignments_and_rules(db: Session, activity_id, assigned_user_ids: li
 def update_activity(
     activity_id: str,
     payload: ActivityUpdate,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     activity = db.query(ActivityRecord).filter(ActivityRecord.id == activity_id).first()
@@ -112,7 +112,7 @@ def update_activity(
 @router.post("")
 def create_activity(
     payload: ActivityCreate,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     req = db.query(AssistanceRequest).filter(AssistanceRequest.id == payload.assistance_request_id).first()
@@ -200,7 +200,7 @@ def list_activities(
 async def upload_activity_attachment(
     activity_id: str,
     file: UploadFile = File(...),
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     activity = db.query(ActivityRecord).filter(ActivityRecord.id == activity_id).first()
@@ -280,7 +280,7 @@ def view_activity_attachment(
 def delete_activity_attachment(
     activity_id: str,
     attachment_id: str,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     attachment = (
@@ -311,7 +311,7 @@ class PaymentApprovalUpdate(BaseModel):
 def set_payment_approval(
     activity_id: str,
     payload: PaymentApprovalUpdate,
-    current_user: User = Depends(require_role(Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
     db: Session = Depends(get_db),
 ):
     """

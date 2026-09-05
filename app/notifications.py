@@ -1,11 +1,44 @@
 from datetime import datetime, timedelta
 
 from app.db import SessionLocal
-from app.models import NotificationRule, ActivityRecord, ActivityAssignment, User, Identity, AssistanceRequest, NotificationSend
+from app.models import NotificationRule, ActivityRecord, ActivityAssignment, User, Identity, AssistanceRequest, NotificationSend, Role
 from app.crypto import decrypt_field
 from app.email import send_notification_email, EmailSendError
 from app.sms import send_sms, SmsSendError
 from app.config import settings
+
+
+def notify_team_of_new_request(db, req: AssistanceRequest, identity: Identity, excluding_user_id) -> None:
+    """
+    Called right after a new AssistanceRequest is created. Notifies
+    every active TEAMMEMBER except whoever just entered the request,
+    via whichever channels they've opted into — same email/SMS
+    preference pattern as scheduled-activity reminders. Send failures
+    are swallowed per-recipient so one bad address never blocks
+    request creation itself.
+    """
+    person_label = decrypt_field(identity.encrypted_full_name) if identity else "a recipient"
+    assistance_type = decrypt_field(req.encrypted_assistance_type) if req.encrypted_assistance_type else "assistance"
+    subject = "New assistance request submitted"
+    body = f"A new request has been submitted for {person_label}: {assistance_type}. Log in to review and vote."
+
+    teammembers = (
+        db.query(User)
+        .filter(User.role == Role.TEAMMEMBER, User.is_active.is_(True), User.id != excluding_user_id)
+        .all()
+    )
+
+    for user in teammembers:
+        if user.notify_email:
+            try:
+                send_notification_email(user.email, subject, body)
+            except EmailSendError:
+                pass
+        if user.notify_sms and settings.twilio_configured and user.phone_number:
+            try:
+                send_sms(user.phone_number, body)
+            except SmsSendError:
+                pass
 
 
 def format_offset(minutes: int) -> str:

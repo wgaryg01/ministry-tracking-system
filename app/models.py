@@ -356,6 +356,7 @@ class AssistanceRequest(Base):
     identity = relationship("Identity", back_populates="assistance_requests")
     activities = relationship("ActivityRecord", back_populates="assistance_request")
     documents = relationship("RequestDocument", back_populates="assistance_request")
+    votes = relationship("RequestVote", back_populates="assistance_request")
 
 
 class RequestDocument(Base):
@@ -397,3 +398,23 @@ class ActivityAttachment(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
     activity = relationship("ActivityRecord", back_populates="attachments")
+
+
+class RequestVote(Base):
+    """
+    One team member's Yes/No vote on whether to support an assistance
+    request. One vote per (request, user) — voting again just updates
+    the existing vote rather than creating a second one. Restricted to
+    ADMIN/TEAMMEMBER, since a vote requires actually being able to see
+    what's being voted on (DEACON/VOLUNTEER can't decrypt PII).
+    """
+    __tablename__ = "request_votes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    assistance_request_id = Column(UUID(as_uuid=True), ForeignKey("assistance_requests.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    support = Column(Boolean, nullable=False)  # True = Yes/support, False = No
+    voted_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    assistance_request = relationship("AssistanceRequest", back_populates="votes")
