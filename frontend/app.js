@@ -2828,7 +2828,7 @@ async function renderDashboard(user, org) {
     const myInfo = await myInfoFor();
 
     const section = el("section");
-    section.appendChild(el("div", { class: "button-row nav-row" }, [newPersonBtn, accessLogsBtn, manageTeam.toggle, myInfo.toggle]));
+    section.appendChild(el("div", { class: "button-row nav-row" }, [newPersonBtn, manageTeam.toggle, accessLogsBtn, myInfo.toggle]));
     section.appendChild(manageTeam.body);
     section.appendChild(myInfo.body);
     main.appendChild(section);
