@@ -17,7 +17,7 @@ def notify_team_of_new_request(db, req: AssistanceRequest, identity: Identity, e
     are swallowed per-recipient so one bad address never blocks
     request creation itself.
     """
-    person_label = decrypt_field(identity.encrypted_full_name) if identity else "a recipient"
+    person_label = f"{decrypt_field(identity.encrypted_first_name)} {decrypt_field(identity.encrypted_last_name)}" if identity else "a recipient"
     assistance_type = decrypt_field(req.encrypted_assistance_type) if req.encrypted_assistance_type else "assistance"
     subject = "New assistance request submitted"
     body = f"A new request has been submitted for {person_label}: {assistance_type}. Log in to review and vote."
@@ -92,7 +92,7 @@ def send_due_notifications() -> None:
 
             req = db.query(AssistanceRequest).filter(AssistanceRequest.id == activity.assistance_request_id).first()
             identity = db.query(Identity).filter(Identity.id == req.identity_id).first() if req else None
-            person_label = decrypt_field(identity.encrypted_full_name) if identity else "a person"
+            person_label = f"{decrypt_field(identity.encrypted_first_name)} {decrypt_field(identity.encrypted_last_name)}" if identity else "a person"
             offset_label = format_offset(rule.offset_minutes)
             when = activity.scheduled_at.strftime("%b %d, %Y at %I:%M %p")
             subject = f"Reminder: scheduled activity {offset_label}"
