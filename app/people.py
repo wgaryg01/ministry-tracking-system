@@ -284,10 +284,20 @@ def get_person(
         yes_votes = sum(1 for v in votes if v.support)
         no_votes = sum(1 for v in votes if not v.support)
         my_vote_row = next((v for v in votes if v.user_id == current_user.id), None)
+
+        voters = []
+        if votes:
+            voter_users = {u.id: u for u in db.query(User).filter(User.id.in_([v.user_id for v in votes])).all()}
+            for v in votes:
+                voter = voter_users.get(v.user_id)
+                label = (voter.full_name or voter.email or voter.username) if voter else "Unknown"
+                voters.append({"name": label, "support": v.support})
+
         vote_summary = {
             "yes": yes_votes,
             "no": no_votes,
             "my_vote": my_vote_row.support if my_vote_row else None,
+            "voters": voters,
         }
 
         if can_see_pii:

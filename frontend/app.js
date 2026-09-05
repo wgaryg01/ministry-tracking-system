@@ -448,7 +448,7 @@ async function renderAddActivityForm(requestId, onLogged) {
   const notesField = buildNotesField();
   const amountInput = el("input", { type: "number", step: "0.01", min: "0", placeholder: "0.00" });
   const categoryInput = el("input", { type: "text", list: datalistId, placeholder: "e.g. groceries, utilities, rent" });
-  const dateInput = el("input", { type: "date" });
+  const dateInput = el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
   const attachmentField = buildAttachmentUploadField();
   const submitBtn = el("button", { class: "primary", text: "Save Activity" });
   const scheduling = await buildStatusSchedulingSection();
@@ -1116,39 +1116,6 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
         el("dt", { text: "Helper" }), el("dd", { text: req.helper_name ? `${req.helper_name} \u2014 ${req.helper_contact || ""} (${req.helper_relationship || ""})` : "\u2014" }),
       ]));
 
-      const voteSection = el("section");
-      voteSection.appendChild(el("h2", { text: "Team vote" }));
-      const voteTally = el("p", { class: "lead" });
-      const updateTally = () => {
-        voteTally.textContent = `${req.votes.yes} yes \u00b7 ${req.votes.no} no`;
-      };
-      updateTally();
-      voteSection.appendChild(voteTally);
-
-      const yesBtn = el("button", { class: req.votes.my_vote === true ? "primary" : "secondary", text: "Yes" });
-      const noBtn = el("button", { class: req.votes.my_vote === false ? "primary" : "secondary", text: "No" });
-      const voteFeedback = el("div");
-      async function castVote(support) {
-        voteFeedback.innerHTML = "";
-        try {
-          await api(`/requests/${req.id}/vote`, { method: "PUT", body: JSON.stringify({ support }) });
-          if (req.votes.my_vote === true) req.votes.yes--;
-          if (req.votes.my_vote === false) req.votes.no--;
-          if (support) req.votes.yes++; else req.votes.no++;
-          req.votes.my_vote = support;
-          yesBtn.className = support === true ? "primary" : "secondary";
-          noBtn.className = support === false ? "primary" : "secondary";
-          updateTally();
-        } catch (err) {
-          voteFeedback.appendChild(msg(err.message, "error"));
-        }
-      }
-      yesBtn.addEventListener("click", () => castVote(true));
-      noBtn.addEventListener("click", () => castVote(false));
-      voteSection.appendChild(el("div", { class: "field-row" }, [yesBtn, noBtn]));
-      voteSection.appendChild(voteFeedback);
-      body.appendChild(voteSection);
-
       const docSection = el("section");
       docSection.appendChild(el("h2", { text: "Documents" }));
       if (req.documents.length === 0) {
@@ -1178,6 +1145,73 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
       body.appendChild(docSection);
     }
   });
+
+  // Votes are always visible (not tucked behind a click) and sit
+  // structurally between the request details and the activities —
+  // this is a prompt, not something a member has to go looking for.
+  if (!isHidden) {
+    const voteSection = el("section");
+    voteSection.appendChild(el("h2", { text: "Team vote" }));
+    voteSection.appendChild(el("p", { class: "lead", text: "Do you support this request?" }));
+
+    const votersList = el("div", { class: "ledger" });
+    const renderVoters = () => {
+      votersList.innerHTML = "";
+      if (req.votes.voters.length === 0) {
+        votersList.appendChild(el("div", { class: "empty-state", text: "No votes yet." }));
+        return;
+      }
+      for (const v of req.votes.voters) {
+        votersList.appendChild(el("div", { class: "ledger-row" }, [
+          el("span", { class: "category", text: v.name }),
+          el("span", { class: "amount", text: v.support ? "Yes" : "No" }),
+        ]));
+      }
+    };
+    renderVoters();
+
+    const voteTally = el("p", { class: "lead" });
+    const updateTally = () => {
+      voteTally.textContent = `${req.votes.yes} yes \u00b7 ${req.votes.no} no`;
+    };
+    updateTally();
+
+    const yesBtn = el("button", { class: req.votes.my_vote === true ? "primary" : "secondary", text: "Yes" });
+    const noBtn = el("button", { class: req.votes.my_vote === false ? "primary" : "secondary", text: "No" });
+    const voteFeedback = el("div");
+    async function castVote(support) {
+      voteFeedback.innerHTML = "";
+      try {
+        await api(`/requests/${req.id}/vote`, { method: "PUT", body: JSON.stringify({ support }) });
+        const myName = currentUser.full_name || currentUser.email || currentUser.username;
+        const existingVoter = req.votes.voters.find((v) => v.name === myName);
+        if (req.votes.my_vote === true) req.votes.yes--;
+        if (req.votes.my_vote === false) req.votes.no--;
+        if (support) req.votes.yes++; else req.votes.no++;
+        req.votes.my_vote = support;
+        if (existingVoter) {
+          existingVoter.support = support;
+        } else {
+          req.votes.voters.push({ name: myName, support });
+        }
+        yesBtn.className = support === true ? "primary" : "secondary";
+        noBtn.className = support === false ? "primary" : "secondary";
+        updateTally();
+        renderVoters();
+      } catch (err) {
+        voteFeedback.appendChild(msg(err.message, "error"));
+      }
+    }
+    yesBtn.addEventListener("click", () => castVote(true));
+    noBtn.addEventListener("click", () => castVote(false));
+
+    voteSection.appendChild(el("div", { class: "field-row" }, [yesBtn, noBtn]));
+    voteSection.appendChild(voteFeedback);
+    voteSection.appendChild(voteTally);
+    voteSection.appendChild(votersList);
+    card.appendChild(voteSection);
+  }
+
 
   const activitiesBody = el("div", { class: "hidden" });
   card.appendChild(activitiesBody);
