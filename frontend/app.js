@@ -1372,6 +1372,13 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     if (!votingClosed) {
       const yesBtn = el("button", { class: req.votes.my_vote === true ? "primary" : "secondary", text: "Yes" });
       const noBtn = el("button", { class: req.votes.my_vote === false ? "primary" : "secondary", text: "No" });
+      const myVoteIndicator = el("p", { class: "lead" });
+      const updateMyVoteIndicator = () => {
+        myVoteIndicator.textContent = req.votes.my_vote === true ? "\u2713 You voted Yes"
+          : req.votes.my_vote === false ? "\u2713 You voted No"
+          : "";
+      };
+      updateMyVoteIndicator();
       const voteFeedback = el("div");
       async function castVote(support) {
         voteFeedback.innerHTML = "";
@@ -1391,6 +1398,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
           yesBtn.className = support === true ? "primary" : "secondary";
           noBtn.className = support === false ? "primary" : "secondary";
           updateTally();
+          updateMyVoteIndicator();
           renderVoters();
         } catch (err) {
           voteFeedback.appendChild(msg(err.message, "error"));
@@ -1401,6 +1409,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
 
       voteButtonsContainer = el("div", { class: "field-row" }, [yesBtn, noBtn]);
       voteSection.appendChild(voteButtonsContainer);
+      voteSection.appendChild(myVoteIndicator);
       voteSection.appendChild(voteFeedback);
     }
 
@@ -2443,6 +2452,24 @@ async function renderOverviewReportPage(onBack) {
     el("div", { class: "field" }, [el("label", { text: "End date" }), endInput]),
   ]));
   main.appendChild(el("div", { class: "button-row" }, [runBtn, fyToggleBtn]));
+
+  const periodHeading = el("h2", { style: "text-align: center;" });
+  main.appendChild(periodHeading);
+  function updatePeriodHeading() {
+    const [thisStart, thisEnd] = thisFyRange();
+    const [lastStart, lastEnd] = lastFyRange();
+    const s = startInput.value;
+    const e = endInput.value;
+    if (s === toDateInputValue(thisStart) && e === toDateInputValue(thisEnd)) {
+      periodHeading.textContent = "This Fiscal Year";
+    } else if (s === toDateInputValue(lastStart) && e === toDateInputValue(lastEnd)) {
+      periodHeading.textContent = "Last Fiscal Year";
+    } else {
+      periodHeading.textContent = `${formatDateDisplay(s)} to ${formatDateDisplay(e)}`;
+    }
+  }
+  updatePeriodHeading();
+
   main.appendChild(el("p", { class: "lead", text: "Defaults to fiscal-year-to-date (fiscal year runs September 1 \u2013 August 31). Status counts reflect each request's current status, so you can see how many requests from a period ended up filled versus still pending." }));
 
   const body = el("div");
@@ -2480,6 +2507,7 @@ async function renderOverviewReportPage(onBack) {
   }
 
   async function refresh() {
+    updatePeriodHeading();
     body.innerHTML = "";
     try {
       const params = new URLSearchParams({ start_date: startInput.value, end_date: endInput.value });
