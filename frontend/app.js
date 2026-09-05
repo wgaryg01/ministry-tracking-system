@@ -751,6 +751,8 @@ function renderEditIdentityForm(identityId, data, onSaved, onCancel) {
           referral_source: ref.values,
           referral_source_other: ref.other,
           referral_name: referralNameInput.value || null,
+          intake_method: editIntakeChurchRadio.checked ? "church_office_form"
+            : editIntakeTeamRadio.checked ? "team_member_entered" : null,
         }),
       });
       if (onSaved) onSaved();
@@ -781,6 +783,16 @@ function renderEditIdentityForm(identityId, data, onSaved, onCancel) {
   form.appendChild(el("h2", { text: "How did you hear about us" }));
   form.appendChild(el("div", { class: "field" }, [referral.root]));
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Referred by" }), referralNameInput]));
+
+  const editIntakeChurchRadio = el("input", { type: "radio", name: "edit_intake_method", value: "church_office_form" });
+  const editIntakeTeamRadio = el("input", { type: "radio", name: "edit_intake_method", value: "team_member_entered" });
+  if (data.intake_method === "church_office_form") editIntakeChurchRadio.checked = true;
+  if (data.intake_method === "team_member_entered") editIntakeTeamRadio.checked = true;
+  form.appendChild(el("div", { class: "field" }, [
+    el("label", { text: "How was this information received?" }),
+    el("label", { class: "checkbox-label" }, [editIntakeChurchRadio, "Form Received from Church Office"]),
+    el("label", { class: "checkbox-label" }, [editIntakeTeamRadio, "Entered By Team Member"]),
+  ]));
 
   form.appendChild(el("div", { class: "field-row" }, [submitBtn, cancelBtn]));
 
@@ -1809,6 +1821,14 @@ async function renderNewPersonPage(onCreated, onBack) {
   const referralNameInput = el("input", { type: "text", placeholder: "Name of person or organization that referred you (if applicable)" });
   referralSection.appendChild(el("div", { class: "field" }, [el("label", { text: "Referred by" }), referralNameInput]));
 
+  const intakeChurchRadio = el("input", { type: "radio", name: "intake_method", value: "church_office_form", required: "true" });
+  const intakeTeamRadio = el("input", { type: "radio", name: "intake_method", value: "team_member_entered", required: "true" });
+  referralSection.appendChild(el("div", { class: "field" }, [
+    el("label", { text: "How was this information received?" }),
+    el("label", { class: "checkbox-label" }, [intakeChurchRadio, "Form Received from Church Office"]),
+    el("label", { class: "checkbox-label" }, [intakeTeamRadio, "Entered By Team Member"]),
+  ]));
+
   const form = el("form", { onsubmit: async (e) => {
     e.preventDefault();
     submitBtn.setAttribute("disabled", "true");
@@ -1832,6 +1852,7 @@ async function renderNewPersonPage(onCreated, onBack) {
           referral_source: ref.values,
           referral_source_other: ref.other,
           referral_name: referralNameInput.value || null,
+          intake_method: intakeChurchRadio.checked ? "church_office_form" : "team_member_entered",
         }),
       });
       for (const member of household.getMembers()) {

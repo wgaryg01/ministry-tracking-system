@@ -117,6 +117,11 @@ class Identity(Base):
     encrypted_referral_source = Column(LargeBinary, nullable=True)  # same joined-list pattern as employment_status
     encrypted_referral_name = Column(LargeBinary, nullable=True)  # referring person/org, if any
 
+    # How this record's data made it into the system — "church_office_form"
+    # or "team_member_entered". Operational metadata about the intake
+    # process itself, not something about the recipient, so left plain.
+    intake_method = Column(String, nullable=True)
+
     # Searchable blind index (HMAC of normalized name/phone) so
     # authorized roles can look someone up without a full table decrypt.
     search_hash = Column(String, nullable=True, index=True)

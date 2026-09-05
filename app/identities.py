@@ -1,7 +1,7 @@
 from datetime import date as date_type, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,14 @@ class IdentityCreate(BaseModel):
     referral_source: list[str] | None = None
     referral_source_other: str | None = None
     referral_name: str | None = None
+    intake_method: str  # "church_office_form" | "team_member_entered" — required at intake
+
+    @field_validator("intake_method")
+    @classmethod
+    def _validate_intake_method(cls, v):
+        if v not in ("church_office_form", "team_member_entered"):
+            raise ValueError("intake_method must be 'church_office_form' or 'team_member_entered'")
+        return v
 
 
 class IdentityUpdate(BaseModel):
@@ -58,6 +66,7 @@ class IdentityUpdate(BaseModel):
     referral_source: list[str] | None = None
     referral_source_other: str | None = None
     referral_name: str | None = None
+    intake_method: str | None = None  # optional here — records predating this field shouldn't be forced to backfill
     # Address is deliberately excluded — moves are recorded via
     # POST /identities/{id}/addresses, never overwritten here.
 
@@ -106,6 +115,7 @@ def create_identity(
         encrypted_job_title=encrypt_field(payload.job_title),
         encrypted_referral_source=encrypt_field(encode_checklist(payload.referral_source or [], payload.referral_source_other)),
         encrypted_referral_name=encrypt_field(payload.referral_name),
+        intake_method=payload.intake_method,
         search_hash=blind_index(f"{payload.last_name}|{payload.first_name}".lower()),
     )
     db.add(identity)
@@ -150,6 +160,8 @@ def update_identity(
     identity.encrypted_job_title = encrypt_field(payload.job_title)
     identity.encrypted_referral_source = encrypt_field(encode_checklist(payload.referral_source or [], payload.referral_source_other))
     identity.encrypted_referral_name = encrypt_field(payload.referral_name)
+    if payload.intake_method is not None:
+        identity.intake_method = payload.intake_method
     identity.search_hash = blind_index(f"{payload.last_name}|{payload.first_name}".lower())
     db.commit()
 
@@ -349,6 +361,7 @@ def get_identity(
         "job_title": decrypt_field(identity.encrypted_job_title),
         "referral_source": decode_checklist(decrypt_field(identity.encrypted_referral_source)),
         "referral_name": decrypt_field(identity.encrypted_referral_name),
+        "intake_method": identity.intake_method,
         "current_address": current_address,
         "address_history": address_history,
         **build_household_summary(identity),

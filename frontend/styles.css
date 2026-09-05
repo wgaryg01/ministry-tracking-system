@@ -271,7 +271,7 @@ button.secondary:hover { background: #CBC2AC; }
   font-weight: normal;
   margin-bottom: 6px;
 }
-.field .checkbox-label input[type="checkbox"] {
+.field .checkbox-label input[type="checkbox"], .field .checkbox-label input[type="radio"] {
   width: auto;
   padding: 0;
   border: none;
