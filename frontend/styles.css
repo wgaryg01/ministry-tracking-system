@@ -110,6 +110,7 @@ button.secondary {
 }
 button.secondary:hover { background: #CBC2AC; }
 
+.button-row.nav-row { gap: 0; row-gap: 0; }
 .nav-row button {
   min-width: 160px;
   text-align: center;
