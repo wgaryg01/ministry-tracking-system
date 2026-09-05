@@ -1869,7 +1869,7 @@ async function renderTeamDirectorySection() {
 
     body.appendChild(el("h2", { text: "Team directory" }));
     try {
-      const roster = (await api("/users")).filter((u) => u.role !== "volunteer");
+      const roster = (await api("/users")).filter((u) => u.role !== "volunteer" && u.is_active);
       if (roster.length === 0) {
         body.appendChild(el("div", { class: "empty-state", text: "No other team members yet." }));
       } else {
