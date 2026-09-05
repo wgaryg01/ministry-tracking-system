@@ -5,9 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, ActivityRecord, AssistanceRequest, ActivityAssignment, NotificationRule, ActivityAttachment
+from app.models import User, Role, ActivityRecord, AssistanceRequest, ActivityAssignment, NotificationRule, ActivityAttachment, CheckRegisterEntry
 from app.upload_utils import read_upload_limited
-from app.permissions import require_role, can_decrypt_pii, log_pii_access
+from app.permissions import require_role, can_decrypt_pii, log_pii_access, can_manage_check_register
 from app.auth import get_current_user
 from app.audit import log_audit_event
 from app.crypto import encrypt_field, encrypt_bytes, decrypt_bytes
@@ -307,6 +307,7 @@ def delete_activity_attachment(
 
 class PaymentApprovalUpdate(BaseModel):
     payment_approved: bool
+    confirm: bool = False  # required (alongside the right role) to reverse an already-paid expense
 
 
 @router.put("/{activity_id}/payment-approval")
@@ -319,7 +320,12 @@ def set_payment_approval(
     """
     A lightweight, single-purpose toggle so approving/unapproving an
     amount for payment doesn't require resubmitting the whole activity
-    form — matches the row-level checkbox in the UI.
+    form — matches the row-level checkbox in the UI. Approving creates
+    a pending expense line in the check register for the Financial
+    Secretary to pay from the designated account. Once that entry has
+    actually been paid, un-approving requires the Financial Secretary
+    (or admin) to explicitly confirm the check won't be distributed —
+    a teammember can no longer just uncheck it.
     """
     activity = db.query(ActivityRecord).filter(ActivityRecord.id == activity_id).first()
     if not activity:
@@ -328,6 +334,34 @@ def set_payment_approval(
     req = db.query(AssistanceRequest).filter(AssistanceRequest.id == activity.assistance_request_id).first()
     if req and req.status in ("denied", "completed", "canceled"):
         raise HTTPException(status_code=400, detail="This request is closed \u2014 payment approval can no longer be changed")
+
+    existing_entry = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.activity_id == activity.id).first()
+
+    if not payload.payment_approved:
+        if existing_entry and existing_entry.status == "paid":
+            if not (can_manage_check_register(current_user) and payload.confirm):
+                raise HTTPException(
+                    status_code=400,
+                    detail="This has already been paid \u2014 only the Financial Secretary can reverse it, and must confirm the check will not be distributed",
+                )
+            db.delete(existing_entry)
+            log_audit_event(
+                db, current_user.id, "check_register_paid_expense_reversed",
+                resource_type="activity_record", resource_id=activity.id,
+                details=f"check_number={existing_entry.check_number}",
+            )
+        elif existing_entry:
+            db.delete(existing_entry)
+    elif payload.payment_approved and not existing_entry:
+        db.add(CheckRegisterEntry(
+            entry_type="expense",
+            amount=activity.amount_spent,
+            transaction_date=activity.activity_date,
+            activity_id=activity.id,
+            category=activity.category,
+            status="pending",
+            created_by_user_id=current_user.id,
+        ))
 
     activity.payment_approved = payload.payment_approved
     db.commit()

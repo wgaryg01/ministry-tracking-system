@@ -16,6 +16,7 @@ from app.requests import router as requests_router
 from app.reports import router as reports_router
 from app.meetings import router as meetings_router
 from app.feedback import router as feedback_router
+from app.check_register import router as check_register_router
 from app.scheduler import start_scheduler
 from app.log_buffer import install_log_capture, get_recent_log_lines
 from app.github_issues import create_github_issue, GitHubIssueError
@@ -34,6 +35,7 @@ app.include_router(requests_router)
 app.include_router(reports_router)
 app.include_router(meetings_router)
 app.include_router(feedback_router)
+app.include_router(check_register_router)
 
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 

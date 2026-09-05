@@ -24,7 +24,8 @@ Base = declarative_base()
 class Role(str, enum.Enum):
     ADMIN = "admin"            # manages org settings/users; does NOT decrypt PII by default
     TEAMMEMBER = "teammember"  # can decrypt PII, logs activity — the role that actually works with client identities
-    VOLUNTEER = "volunteer"    # sees activity totals + identity_id only, never PII
+    VOLUNTEER = "volunteer"    # sees activity totals + identity_id only, never PII (labeled "Deacon" in the UI)
+    FINANCIAL_SECRETARY = "financial_secretary"  # manages the check register; never decrypts PII, but sees full financial transaction detail
 
 
 class User(Base):
@@ -486,3 +487,68 @@ class RecordPresence(Base):
     identity_id = Column(UUID(as_uuid=True), ForeignKey("identities.id"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CheckRegisterEntry(Base):
+    """
+    One line of the check register — either income (a donation) or an
+    expense (an activity that's been approved to be paid). Expense
+    rows are created automatically the moment an activity's payment
+    gets approved, and start "pending" until the Financial Secretary
+    marks them paid with a date and check number.
+
+    Deliberately no link back to any recipient's name — only the
+    activity's own non-PII category (e.g. "rent", "groceries") is
+    carried over, since the Financial Secretary never decrypts PII.
+    Balances are computed by replaying the full history in date order
+    rather than storing a running total — simpler to keep correct if
+    an entry is ever corrected, and completely fine at this volume.
+    """
+    __tablename__ = "check_register_entries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entry_type = Column(String, nullable=False)  # "income" | "expense"
+    amount = Column(Numeric(10, 2), nullable=False)
+    transaction_date = Column(Date, nullable=False)  # income: date donated; expense: date incurred (activity date)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity_records.id"), nullable=True)
+    category = Column(String, nullable=True)  # non-PII — mirrors the linked activity's category, for expenses only
+    status = Column(String, nullable=False, default="pending")  # only meaningful for expenses: "pending" | "paid"
+    date_paid = Column(Date, nullable=True)
+    check_number = Column(String, nullable=True)
+    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    paid_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CheckRegisterStartingBalance(Base):
+    """
+    The designated-fund balance as of a known starting point (the
+    initial donation). Everything since is derived by replaying income
+    and paid expenses forward from here — this is the anchor, not a
+    running total itself.
+    """
+    __tablename__ = "check_register_starting_balance"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    balance = Column(Numeric(10, 2), nullable=False)
+    as_of_date = Column(Date, nullable=False)
+    set_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FiscalYearBudget(Base):
+    """
+    The church's annual budget for this ministry, available once
+    designated funds are exhausted. One row per fiscal year (labeled
+    by the year it ends in, e.g. 2026 = Sept 2025-Aug 2026, matching
+    the fiscal-year convention used everywhere else in this app) —
+    subject to change each Sept 1, so re-entering the same year
+    updates it rather than creating a duplicate.
+    """
+    __tablename__ = "fiscal_year_budgets"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    fiscal_year = Column(Integer, nullable=False, unique=True)
+    budget_amount = Column(Numeric(10, 2), nullable=False)
+    set_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

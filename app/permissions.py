@@ -51,11 +51,18 @@ def can_decrypt_pii(user: User, db: Session) -> ElevationGrant | bool:
     ADMIN and TEAMMEMBER can both always decrypt PII — ADMIN no longer
     needs to request elevation. DEACON (the Role.VOLUNTEER value —
     kept internally to avoid another destructive rename migration,
-    relabeled "Deacon" everywhere in the UI) never can.
+    relabeled "Deacon" everywhere in the UI) and FINANCIAL_SECRETARY
+    never can — the Financial Secretary manages the check register in
+    full detail, but never sees who any of the money was for.
     """
     if user.role in (Role.TEAMMEMBER, Role.ADMIN):
         return True
     return False
+
+
+def can_manage_check_register(user: User) -> bool:
+    """ADMIN and FINANCIAL_SECRETARY manage the check register — nobody else."""
+    return user.role in (Role.ADMIN, Role.FINANCIAL_SECRETARY)
 
 
 def log_pii_access(db: Session, user: User, identity_id, elevation_grant: ElevationGrant | None = None) -> None:

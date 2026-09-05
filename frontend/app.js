@@ -246,7 +246,9 @@ function formatDateTimeDisplay(isoDateTime) {
 }
 
 function roleLabel(role) {
-  return role === "volunteer" ? "deacon" : role;
+  if (role === "volunteer") return "deacon";
+  if (role === "financial_secretary") return "financial secretary";
+  return role;
 }
 
 function canEdit() {
@@ -1993,6 +1995,7 @@ function renderManageEditForm(u, onSaved) {
   const roleSelect = el("select", {}, [
     el("option", { value: "volunteer", text: "Deacon" }),
     el("option", { value: "teammember", text: "Team member" }),
+    el("option", { value: "financial_secretary", text: "Financial Secretary" }),
     el("option", { value: "admin", text: "Admin" }),
   ]);
   roleSelect.value = u.role;
@@ -2136,6 +2139,7 @@ function renderInviteSection(canGrantAdmin) {
   const roleOptions = [
     el("option", { value: "volunteer", text: "Deacon" }),
     el("option", { value: "teammember", text: "Team member" }),
+    el("option", { value: "financial_secretary", text: "Financial Secretary" }),
   ];
   if (canGrantAdmin) roleOptions.push(el("option", { value: "admin", text: "Admin" }));
   const roleSelect = el("select", {}, roleOptions);
@@ -2440,6 +2444,191 @@ async function renderAccessLogsPage(onNavigate, onBack) {
   await refresh();
 }
 
+async function renderCheckRegisterPage(onBack) {
+  main.innerHTML = "";
+  const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
+  backLink.addEventListener("click", onBack);
+  main.appendChild(backLink);
+
+  main.appendChild(el("h1", { text: "Check Register" }));
+  const refreshBtn = el("button", { class: "secondary", text: "Refresh" });
+  main.appendChild(refreshBtn);
+
+  const body = el("div");
+  main.appendChild(body);
+
+  async function refresh() {
+    body.innerHTML = "";
+    try {
+      const data = await api("/check-register");
+
+      const strip = el("div", { class: "totals-strip" });
+      strip.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: "Designated fund balance" }), el("span", { class: "value", text: money(data.designated_balance) })]));
+      const currentFy = fiscalYearOf(new Date());
+      strip.appendChild(el("div", { class: "stat" }, [
+        el("span", { class: "label", text: `FY${currentFy} budget` }),
+        el("span", { class: "value", text: money(data.fiscal_year_budgets[currentFy] || 0) }),
+      ]));
+      strip.appendChild(el("div", { class: "stat" }, [
+        el("span", { class: "label", text: `FY${currentFy} budget used` }),
+        el("span", { class: "value", text: money(data.fiscal_year_budget_used[currentFy] || 0) }),
+      ]));
+      body.appendChild(strip);
+
+      // Starting balance
+      const startSection = el("section");
+      startSection.appendChild(el("h2", { text: "Starting balance" }));
+      startSection.appendChild(el("p", { class: "lead", text: data.starting_date
+        ? `Currently set to ${money(data.starting_balance)} as of ${formatDateDisplay(data.starting_date)}.`
+        : "Not set yet \u2014 enter the initial donation balance to begin." }));
+      const startBalanceInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
+      const startDateInput = el("input", { type: "date" });
+      const startBtn = el("button", { class: "secondary", text: "Set starting balance" });
+      const startFeedback = el("div");
+      startBtn.addEventListener("click", async () => {
+        startFeedback.innerHTML = "";
+        try {
+          await api("/check-register/starting-balance", {
+            method: "POST",
+            body: JSON.stringify({ balance: parseFloat(startBalanceInput.value), as_of_date: startDateInput.value }),
+          });
+          refresh();
+        } catch (err) {
+          startFeedback.appendChild(msg(err.message, "error"));
+        }
+      });
+      startSection.appendChild(el("div", { class: "field-row" }, [
+        el("div", { class: "field" }, [el("label", { text: "Balance" }), startBalanceInput]),
+        el("div", { class: "field" }, [el("label", { text: "As of date" }), startDateInput]),
+      ]));
+      startSection.appendChild(startBtn);
+      startSection.appendChild(startFeedback);
+      body.appendChild(startSection);
+
+      // Fiscal year budget
+      const budgetSection = el("section");
+      budgetSection.appendChild(el("h2", { text: "Annual budget" }));
+      budgetSection.appendChild(el("p", { class: "lead", text: "Set each fiscal year's budget \u2014 available once designated funds are exhausted. Subject to change each September 1." }));
+      const budgetYearInput = el("input", { type: "number", value: currentFy, placeholder: "Fiscal year" });
+      const budgetAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
+      const budgetBtn = el("button", { class: "secondary", text: "Set budget" });
+      const budgetFeedback = el("div");
+      budgetBtn.addEventListener("click", async () => {
+        budgetFeedback.innerHTML = "";
+        try {
+          await api("/check-register/fiscal-year-budget", {
+            method: "POST",
+            body: JSON.stringify({ fiscal_year: parseInt(budgetYearInput.value, 10), budget_amount: parseFloat(budgetAmountInput.value) }),
+          });
+          refresh();
+        } catch (err) {
+          budgetFeedback.appendChild(msg(err.message, "error"));
+        }
+      });
+      budgetSection.appendChild(el("div", { class: "field-row" }, [
+        el("div", { class: "field" }, [el("label", { text: "Fiscal year" }), budgetYearInput]),
+        el("div", { class: "field" }, [el("label", { text: "Budget amount" }), budgetAmountInput]),
+      ]));
+      budgetSection.appendChild(budgetBtn);
+      budgetSection.appendChild(budgetFeedback);
+      body.appendChild(budgetSection);
+
+      // Income
+      const incomeSection = el("section");
+      incomeSection.appendChild(el("h2", { text: "Record income" }));
+      const incomeDateInput = el("input", { type: "date" });
+      const incomeAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
+      const incomeBtn = el("button", { class: "primary", text: "Record donation" });
+      const incomeFeedback = el("div");
+      incomeBtn.addEventListener("click", async () => {
+        incomeFeedback.innerHTML = "";
+        try {
+          await api("/check-register/income", {
+            method: "POST",
+            body: JSON.stringify({ transaction_date: incomeDateInput.value, amount: parseFloat(incomeAmountInput.value) }),
+          });
+          refresh();
+        } catch (err) {
+          incomeFeedback.appendChild(msg(err.message, "error"));
+        }
+      });
+      incomeSection.appendChild(el("div", { class: "field-row" }, [
+        el("div", { class: "field" }, [el("label", { text: "Date" }), incomeDateInput]),
+        el("div", { class: "field" }, [el("label", { text: "Amount donated" }), incomeAmountInput]),
+      ]));
+      incomeSection.appendChild(incomeBtn);
+      incomeSection.appendChild(incomeFeedback);
+      body.appendChild(incomeSection);
+
+      // Pending expenses awaiting payment
+      const pendingSection = el("section");
+      pendingSection.appendChild(el("h2", { text: "Pending expenses" }));
+      if (data.pending_expenses.length === 0) {
+        pendingSection.appendChild(el("div", { class: "empty-state", text: "Nothing awaiting payment." }));
+      } else {
+        for (const p of data.pending_expenses) {
+          const row = el("div", { class: "ledger-row" });
+          row.appendChild(el("span", { class: "date", text: formatDateDisplay(p.date) }));
+          row.appendChild(el("span", { class: "category", text: p.category || "\u2014" }));
+          row.appendChild(el("span", { class: "amount", text: money(p.amount) }));
+          const dateePaidInput = el("input", { type: "date" });
+          const checkNumInput = el("input", { type: "text", placeholder: "Check #" });
+          const payBtn = el("button", { class: "secondary", text: "Mark paid" });
+          const payFeedback = el("div");
+          payBtn.addEventListener("click", async () => {
+            payFeedback.innerHTML = "";
+            try {
+              await api(`/check-register/expense/${p.id}/pay`, {
+                method: "PUT",
+                body: JSON.stringify({ date_paid: dateePaidInput.value, check_number: checkNumInput.value }),
+              });
+              refresh();
+            } catch (err) {
+              payFeedback.appendChild(msg(err.message, "error"));
+            }
+          });
+          const wrap = el("div");
+          wrap.appendChild(row);
+          wrap.appendChild(el("div", { class: "field-row" }, [dateePaidInput, checkNumInput, payBtn]));
+          wrap.appendChild(payFeedback);
+          pendingSection.appendChild(wrap);
+        }
+      }
+      body.appendChild(pendingSection);
+
+      // Full ledger
+      const ledgerSection = el("section");
+      ledgerSection.appendChild(el("h2", { text: "Ledger" }));
+      if (data.transactions.length === 0) {
+        ledgerSection.appendChild(el("div", { class: "empty-state", text: "No transactions yet." }));
+      } else {
+        const head = el("div", { class: "report-row report-row-head" }, [
+          el("span", { class: "report-period", text: "Date / Description" }),
+          el("span", { class: "report-num", text: "Amount" }),
+          el("span", { class: "report-num", text: "From budget" }),
+          el("span", { class: "report-aid", text: "Balance" }),
+        ]);
+        ledgerSection.appendChild(head);
+        for (const t of data.transactions) {
+          const label = t.type === "income" ? "Donation" : `${t.category || "Expense"}${t.check_number ? " (Check #" + t.check_number + ")" : ""}`;
+          ledgerSection.appendChild(el("div", { class: "report-row" }, [
+            el("span", { class: "report-period", text: `${formatDateDisplay(t.date)} \u2014 ${label}` }),
+            el("span", { class: "report-num", text: (t.type === "income" ? "+" : "-") + money(t.amount) }),
+            el("span", { class: "report-num", text: t.from_budget > 0 ? money(t.from_budget) : "\u2014" }),
+            el("span", { class: "report-aid", text: money(t.running_balance) }),
+          ]));
+        }
+      }
+      body.appendChild(ledgerSection);
+    } catch (err) {
+      body.appendChild(msg(err.message, "error"));
+    }
+  }
+
+  refreshBtn.addEventListener("click", refresh);
+  await refresh();
+}
+
 async function renderRecipientListPage(onNavigate, onBack) {
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
@@ -2543,6 +2732,29 @@ async function renderOverviewReportPage(onBack) {
   main.appendChild(el("h1", { text: "Overview" }));
   const topRefreshBtn = el("button", { class: "secondary", text: "Refresh" });
   main.appendChild(topRefreshBtn);
+
+  const fundSection = el("section");
+  main.appendChild(fundSection);
+  async function loadFundSummary() {
+    fundSection.innerHTML = "";
+    fundSection.appendChild(el("h2", { text: "Fund Balance" }));
+    try {
+      const fs = await api("/check-register/summary");
+      const strip = el("div", { class: "totals-strip" });
+      strip.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: "Designated fund balance" }), el("span", { class: "value", text: money(fs.designated_balance) })]));
+      strip.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: "YTD income" }), el("span", { class: "value", text: money(fs.ytd.income) })]));
+      strip.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: "YTD expenses" }), el("span", { class: "value", text: money(fs.ytd.expenses) })]));
+      fundSection.appendChild(strip);
+      const strip2 = el("div", { class: "totals-strip" });
+      strip2.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: "Last FY income" }), el("span", { class: "value", text: money(fs.last_fiscal_year.income) })]));
+      strip2.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: "Last FY expenses" }), el("span", { class: "value", text: money(fs.last_fiscal_year.expenses) })]));
+      strip2.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: `FY${fs.current_fiscal_year} budget used` }), el("span", { class: "value", text: money(fs.current_fiscal_year_budget_used) })]));
+      fundSection.appendChild(strip2);
+    } catch (err) {
+      fundSection.appendChild(msg(err.message, "error"));
+    }
+  }
+  await loadFundSummary();
 
   const today = new Date();
   const currentFy = fiscalYearOf(today);
@@ -2648,7 +2860,7 @@ async function renderOverviewReportPage(onBack) {
   }
 
   runBtn.addEventListener("click", refresh);
-  topRefreshBtn.addEventListener("click", refresh);
+  topRefreshBtn.addEventListener("click", () => { loadFundSummary(); refresh(); });
   await refresh();
 }
 
@@ -2865,11 +3077,13 @@ async function renderDashboard(user, org) {
     newPersonBtn.addEventListener("click", () => renderNewPersonPage((newIdentityId) => showDetail(newIdentityId), showList));
     const accessLogsBtn = el("button", { class: "secondary", text: "Access Logs" });
     accessLogsBtn.addEventListener("click", () => renderAccessLogsPage(showDetail, showList));
+    const checkRegisterBtn = el("button", { class: "secondary", text: "Check Register" });
+    checkRegisterBtn.addEventListener("click", () => renderCheckRegisterPage(showList));
     const manageTeam = await renderManageTeamSection();
     const myInfo = await myInfoFor();
 
     const section = el("section");
-    section.appendChild(el("div", { class: "button-row nav-row" }, [newPersonBtn, manageTeam.toggle, accessLogsBtn, myInfo.toggle]));
+    section.appendChild(el("div", { class: "button-row nav-row" }, [newPersonBtn, manageTeam.toggle, accessLogsBtn, checkRegisterBtn, myInfo.toggle]));
     section.appendChild(manageTeam.body);
     section.appendChild(myInfo.body);
     main.appendChild(section);
@@ -2893,7 +3107,18 @@ async function renderDashboard(user, org) {
     section.appendChild(myInfo.body);
     main.appendChild(section);
   }
-  main.appendChild(await renderPeopleSection(showDetail));
+  if (user.role === "financial_secretary") {
+    const checkRegisterBtn = el("button", { class: "secondary", text: "Check Register" });
+    checkRegisterBtn.addEventListener("click", () => renderCheckRegisterPage(showList));
+    const myInfo = await myInfoFor();
+    const section = el("section");
+    section.appendChild(el("div", { class: "button-row nav-row" }, [checkRegisterBtn, myInfo.toggle]));
+    section.appendChild(myInfo.body);
+    main.appendChild(section);
+  }
+  if (user.role !== "financial_secretary") {
+    main.appendChild(await renderPeopleSection(showDetail));
+  }
 }
 
 // ---------- First-time account setup ----------
