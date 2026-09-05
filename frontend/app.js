@@ -2515,7 +2515,7 @@ async function renderMeetingCard(m, onChanged) {
   return card;
 }
 
-async function renderRequestListPage(title, description, endpoint, emptyText, onNavigate, onBack) {
+async function renderRequestListPage(title, description, endpoint, emptyText, onNavigate, onBack, showUnvotedFilter) {
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
   backLink.addEventListener("click", onBack);
@@ -2526,13 +2526,22 @@ async function renderRequestListPage(title, description, endpoint, emptyText, on
   main.appendChild(refreshBtn);
   main.appendChild(el("p", { class: "lead", text: description }));
 
+  let unvotedOnly = false;
+  if (showUnvotedFilter) {
+    const filterCb = el("input", { type: "checkbox" });
+    const filterLabel = el("label", { class: "checkbox-label" }, [filterCb, "Show only requests I haven't voted on"]);
+    filterCb.addEventListener("change", () => { unvotedOnly = filterCb.checked; refresh(); });
+    main.appendChild(el("div", { class: "field" }, [filterLabel]));
+  }
+
   const body = el("div");
   main.appendChild(body);
 
   async function refresh() {
     body.innerHTML = "";
     try {
-      const requests = await api(endpoint);
+      const params = unvotedOnly ? "?unvoted_only=true" : "";
+      const requests = await api(`${endpoint}${params}`);
       if (requests.length === 0) {
         body.appendChild(el("div", { class: "empty-state", text: emptyText }));
         return;
@@ -2542,6 +2551,7 @@ async function renderRequestListPage(title, description, endpoint, emptyText, on
         el("span", { class: "req-date", text: "Date" }),
         el("span", { class: "req-need", text: "Recipient / Need" }),
         el("span", { class: "req-status", text: "Status" }),
+        el("span", { class: "req-status", text: "Votes" }),
         el("span", { class: "req-amount", text: "Total" }),
       ]);
       body.appendChild(head);
@@ -2555,6 +2565,7 @@ async function renderRequestListPage(title, description, endpoint, emptyText, on
           el("span", { class: "req-date", text: r.request_received_date ? formatDateDisplay(r.request_received_date) : "\u2014" }),
           el("span", { class: "req-need", text: label }),
           el("span", { class: "req-status", text: formatRequestStatus(r.status) }),
+          el("span", { class: "req-status", text: `Y=${r.yes_votes}/N=${r.no_votes}` }),
           el("span", { class: "req-amount", text: money(r.total_amount) }),
         ]);
         body.appendChild(row);
@@ -2574,7 +2585,7 @@ async function renderOpenRequestsPage(onNavigate, onBack) {
     "Every request that isn't denied, completed, or canceled.",
     "/requests/open",
     "No open requests right now.",
-    onNavigate, onBack,
+    onNavigate, onBack, true,
   );
 }
 
@@ -2584,7 +2595,7 @@ async function renderClosedRequestsPage(onNavigate, onBack) {
     "Every request that's been denied, completed, or canceled.",
     "/requests/closed",
     "No closed requests yet.",
-    onNavigate, onBack,
+    onNavigate, onBack, false,
   );
 }
 

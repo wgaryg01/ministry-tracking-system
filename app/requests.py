@@ -301,6 +301,11 @@ def _list_requests_by_status(db: Session, current_user: User, statuses: set, aud
             sum(float(a.amount_spent) for a in activities if a.amount_spent is not None and a.payment_approved), 2
         )
 
+        votes = db.query(RequestVote).filter(RequestVote.assistance_request_id == req.id).all()
+        yes_votes = sum(1 for v in votes if v.support)
+        no_votes = sum(1 for v in votes if not v.support)
+        i_voted = any(v.user_id == current_user.id for v in votes)
+
         results.append({
             "identity_id": str(req.identity_id),
             "request_id": str(req.id),
@@ -309,6 +314,9 @@ def _list_requests_by_status(db: Session, current_user: User, statuses: set, aud
             "status": req.status,
             "request_received_date": req.acknowledged_date.isoformat() if req.acknowledged_date else None,
             "total_amount": total_amount,
+            "yes_votes": yes_votes,
+            "no_votes": no_votes,
+            "i_voted": i_voted,
         })
 
     log_audit_event(
@@ -321,6 +329,7 @@ def _list_requests_by_status(db: Session, current_user: User, statuses: set, aud
 
 @router.get("/requests/open")
 def list_open_requests(
+    unvoted_only: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -329,7 +338,10 @@ def list_open_requests(
     or canceled — the working queue. Same PII gating as everywhere
     else: names/need are only shown if the requester can decrypt PII.
     """
-    return _list_requests_by_status(db, current_user, OPEN_STATUSES, "open_requests_listed")
+    results = _list_requests_by_status(db, current_user, OPEN_STATUSES, "open_requests_listed")
+    if unvoted_only:
+        results = [r for r in results if not r["i_voted"]]
+    return results
 
 
 @router.get("/requests/closed")

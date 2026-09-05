@@ -2,10 +2,13 @@ from datetime import datetime, timedelta
 
 from app.db import SessionLocal
 from app.models import NotificationRule, ActivityRecord, ActivityAssignment, User, Identity, AssistanceRequest, NotificationSend, Role
-from app.crypto import decrypt_field
 from app.email import send_notification_email, EmailSendError
 from app.sms import send_sms, SmsSendError
 from app.config import settings
+
+
+def _env_subject_prefix() -> str:
+    return "[Development] " if settings.environment == "development" else ""
 
 
 def notify_team_of_new_request(db, req: AssistanceRequest, identity: Identity, excluding_user_id) -> None:
@@ -16,11 +19,13 @@ def notify_team_of_new_request(db, req: AssistanceRequest, identity: Identity, e
     preference pattern as scheduled-activity reminders. Send failures
     are swallowed per-recipient so one bad address never blocks
     request creation itself.
+
+    Deliberately no recipient name/need and no link in the message —
+    email isn't a place for client PII, and the person must sign in
+    through the normal authentication flow rather than a bypass link.
     """
-    person_label = f"{decrypt_field(identity.encrypted_first_name)} {decrypt_field(identity.encrypted_last_name)}" if identity else "a recipient"
-    assistance_type = decrypt_field(req.encrypted_assistance_type) if req.encrypted_assistance_type else "assistance"
-    subject = "New assistance request submitted"
-    body = f"A new request has been submitted for {person_label}: {assistance_type}. Log in to review and vote."
+    subject = f"{_env_subject_prefix()}New assistance request submitted"
+    body = "A new assistance request has been submitted. Please log in to review and vote on the need."
 
     teammembers = (
         db.query(User)
@@ -91,12 +96,10 @@ def send_due_notifications() -> None:
                 continue
 
             req = db.query(AssistanceRequest).filter(AssistanceRequest.id == activity.assistance_request_id).first()
-            identity = db.query(Identity).filter(Identity.id == req.identity_id).first() if req else None
-            person_label = f"{decrypt_field(identity.encrypted_first_name)} {decrypt_field(identity.encrypted_last_name)}" if identity else "a person"
             offset_label = format_offset(rule.offset_minutes)
             when = activity.scheduled_at.strftime("%b %d, %Y at %I:%M %p")
-            subject = f"Reminder: scheduled activity {offset_label}"
-            body = f"You're assigned to a scheduled activity for {person_label}, coming up {offset_label} ({when})."
+            subject = f"{_env_subject_prefix()}Reminder: scheduled activity {offset_label}"
+            body = f"You're assigned to a scheduled activity coming up {offset_label} ({when}). Please log in to view details."
 
             for a in assignments:
                 user = db.query(User).filter(User.id == a.user_id).first()
