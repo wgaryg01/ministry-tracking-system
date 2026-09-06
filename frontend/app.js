@@ -985,7 +985,7 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed) {
     summaryBits.push(el("div", { class: "lead", text: `Notify: ${a.notification_offsets_minutes.map(offsetLabel).join(", ")}` }));
   }
 
-  if (canEdit) {
+  if (canEdit && !requestClosed) {
     const editToggle = el("button", { class: "link-btn", text: "Edit" });
     const editWrap = el("div", { class: "hidden" });
     editToggle.addEventListener("click", async () => {
@@ -2522,7 +2522,7 @@ async function renderCheckRegisterPage(onBack) {
       body.appendChild(strip);
 
       // Starting balance
-      const startSection = el("section");
+      const startSection = el("section", { class: "cr-section" });
       startSection.appendChild(el("h2", { text: "Starting balance" }));
       startSection.appendChild(el("p", { class: "lead", text: data.starting_date
         ? `Currently set to ${money(data.starting_balance)} as of ${formatDateDisplay(data.starting_date)}.`
@@ -2552,7 +2552,7 @@ async function renderCheckRegisterPage(onBack) {
       body.appendChild(startSection);
 
       // Fiscal year budget
-      const budgetSection = el("section");
+      const budgetSection = el("section", { class: "cr-section" });
       budgetSection.appendChild(el("h2", { text: "Annual budget" }));
       budgetSection.appendChild(el("p", { class: "lead", text: "Set each fiscal year's budget \u2014 available once designated funds are exhausted. Subject to change each September 1." }));
       const budgetYearInput = el("input", { type: "number", value: currentFy, placeholder: "Fiscal year" });
@@ -2580,7 +2580,7 @@ async function renderCheckRegisterPage(onBack) {
       body.appendChild(budgetSection);
 
       // Income
-      const incomeSection = el("section");
+      const incomeSection = el("section", { class: "cr-section" });
       incomeSection.appendChild(el("h2", { text: "Record income" }));
       const incomeDateInput = el("input", { type: "date" });
       const incomeAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
@@ -2607,7 +2607,7 @@ async function renderCheckRegisterPage(onBack) {
       body.appendChild(incomeSection);
 
       // Standalone expense (bank charges, fees — not tied to any request)
-      const otherExpenseSection = el("section");
+      const otherExpenseSection = el("section", { class: "cr-section" });
       otherExpenseSection.appendChild(el("h2", { text: "Record other expense" }));
       otherExpenseSection.appendChild(el("p", { class: "lead", text: "For bank charges, service fees, or anything else paid straight out of the account \u2014 not tied to a recipient's request." }));
       const oeDateInput = el("input", { type: "date" });
@@ -2656,7 +2656,7 @@ async function renderCheckRegisterPage(onBack) {
       body.appendChild(otherExpenseSection);
 
       // Pending expenses awaiting payment
-      const pendingSection = el("section");
+      const pendingSection = el("section", { class: "cr-section" });
       pendingSection.appendChild(el("h2", { text: "Pending expenses" }));
       if (data.pending_expenses.length === 0) {
         pendingSection.appendChild(el("div", { class: "empty-state", text: "Nothing awaiting payment." }));
@@ -2724,7 +2724,7 @@ async function renderCheckRegisterPage(onBack) {
       body.appendChild(pendingSection);
 
       // Full ledger
-      const ledgerSection = el("section");
+      const ledgerSection = el("section", { class: "cr-section" });
       ledgerSection.appendChild(el("h2", { text: "Ledger" }));
       if (data.transactions.length === 0) {
         ledgerSection.appendChild(el("div", { class: "empty-state", text: "No transactions yet." }));

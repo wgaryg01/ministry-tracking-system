@@ -66,6 +66,8 @@ a { color: var(--slate-deep); }
 }
 
 section + section { margin-top: 40px; padding-top: 32px; border-top: 1px solid var(--line); }
+.cr-section + .cr-section { margin-top: 16px; padding-top: 16px; }
+.cr-section h2 { margin-bottom: 8px; }
 
 h1 { font-family: var(--font-display); font-weight: 600; font-size: 1.6rem; margin: 0 0 6px; }
 h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem; margin: 0 0 16px; }

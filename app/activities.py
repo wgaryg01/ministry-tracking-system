@@ -90,6 +90,10 @@ def update_activity(
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
 
+    req = db.query(AssistanceRequest).filter(AssistanceRequest.id == activity.assistance_request_id).first()
+    if req and req.status in ("denied", "completed", "canceled"):
+        raise HTTPException(status_code=400, detail="This request is closed \u2014 its activities can no longer be edited")
+
     _validate_scheduling(payload.status, payload.scheduled_at, payload.notification_offsets_minutes)
 
     activity.activity_date = payload.activity_date or activity.activity_date
