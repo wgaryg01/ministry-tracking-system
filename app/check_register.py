@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, CheckRegisterEntry, CheckRegisterStartingBalance, FiscalYearBudget, CheckRegisterPresence
+from app.models import User, Role, CheckRegisterEntry, CheckRegisterStartingBalance, FiscalYearBudget, CheckRegisterPresence, ActivityRecord, AssistanceRequest
 from app.auth import get_current_user
 from app.permissions import require_role
 from app.audit import log_audit_event
@@ -85,6 +85,20 @@ def _replay_ledger(db: Session) -> dict:
         .all()
     )
 
+    # Batched lookup: activity_id -> identity_id, so an expense tied
+    # to a recipient's activity can link back to them. Standalone
+    # expenses (bank fees, etc.) have no activity_id and stay unlinked.
+    activity_ids = [e.activity_id for e in paid_expenses + pending_expenses if e.activity_id]
+    activity_to_identity = {}
+    if activity_ids:
+        rows = (
+            db.query(ActivityRecord.id, AssistanceRequest.identity_id)
+            .join(AssistanceRequest, ActivityRecord.assistance_request_id == AssistanceRequest.id)
+            .filter(ActivityRecord.id.in_(activity_ids))
+            .all()
+        )
+        activity_to_identity = {str(aid): str(iid) for aid, iid in rows}
+
     events = [{"date": e.transaction_date, "type": "income", "entry": e} for e in income_entries]
     events += [{"date": e.date_paid, "type": "expense", "entry": e} for e in paid_expenses]
     events.sort(key=lambda x: (x["date"], x["entry"].created_at))
@@ -118,6 +132,7 @@ def _replay_ledger(db: Session) -> dict:
                 "amount": amount, "category": e.category, "payee_name": e.payee_name, "check_number": e.check_number,
                 "running_balance": designated_balance, "from_budget": from_budget,
                 "last_edited_by": edited_by, "last_edited_at": edited_at,
+                "identity_id": activity_to_identity.get(str(e.activity_id)) if e.activity_id else None,
             })
 
     return {
@@ -134,6 +149,7 @@ def _replay_ledger(db: Session) -> dict:
                 "amount": float(e.amount), "category": e.category, "payee_name": e.payee_name,
                 "last_edited_by": user_names.get(e.last_edited_by_user_id),
                 "last_edited_at": e.last_edited_at.isoformat() if e.last_edited_at else None,
+                "identity_id": activity_to_identity.get(str(e.activity_id)) if e.activity_id else None,
             }
             for e in pending_expenses
         ],

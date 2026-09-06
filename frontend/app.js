@@ -2478,7 +2478,7 @@ async function renderAccessLogsPage(onNavigate, onBack) {
 
 let _checkRegisterPresenceInterval = null;
 
-async function renderCheckRegisterPage(onBack) {
+async function renderCheckRegisterPage(onNavigate, onBack) {
   if (_checkRegisterPresenceInterval) { clearInterval(_checkRegisterPresenceInterval); _checkRegisterPresenceInterval = null; }
   const wrappedOnBack = () => {
     if (_checkRegisterPresenceInterval) { clearInterval(_checkRegisterPresenceInterval); _checkRegisterPresenceInterval = null; }
@@ -2711,7 +2711,12 @@ async function renderCheckRegisterPage(onBack) {
           }
           const row = el("div", rowAttrs);
           row.appendChild(el("span", { class: "date", text: formatDateDisplay(p.date) }));
-          row.appendChild(el("span", { class: "category", text: p.category || "\u2014" }));
+          const categorySpan = el("span", { class: "category", text: p.category || "\u2014" });
+          if (p.identity_id) {
+            categorySpan.classList.add("clickable-row");
+            categorySpan.addEventListener("click", () => onNavigate(p.identity_id));
+          }
+          row.appendChild(categorySpan);
           row.appendChild(el("span", { class: "amount", text: money(p.amount) }));
           const editAmountInput = el("input", { type: "number", step: "0.01", value: p.amount });
           const editCategoryInput = el("input", { type: "text", value: p.category || "" });
@@ -2787,8 +2792,13 @@ async function renderCheckRegisterPage(onBack) {
           if (t.last_edited_by) {
             rowAttrs.title = `Last edited by ${t.last_edited_by} on ${formatDateTimeDisplay(t.last_edited_at)}`;
           }
+          const periodSpan = el("span", { class: "report-period", text: `${formatDateDisplay(t.date)} \u2014 ${label}` });
+          if (t.identity_id) {
+            periodSpan.classList.add("clickable-row");
+            periodSpan.addEventListener("click", () => onNavigate(t.identity_id));
+          }
           const displayRow = el("div", rowAttrs, [
-            el("span", { class: "report-period", text: `${formatDateDisplay(t.date)} \u2014 ${label}` }),
+            periodSpan,
             el("span", { class: "report-num", text: (t.type === "income" ? "+" : "-") + money(t.amount) }),
             el("span", { class: "report-num", text: t.from_budget > 0 ? money(t.from_budget) : "\u2014" }),
             el("span", { class: "report-aid", text: money(t.running_balance) }),
@@ -3323,7 +3333,7 @@ async function renderDashboard(user, org) {
     const accessLogsBtn = el("button", { class: "secondary", text: "Access Logs" });
     accessLogsBtn.addEventListener("click", () => renderAccessLogsPage(showDetail, showList));
     const checkRegisterBtn = el("button", { class: "secondary", text: "Check Register" });
-    checkRegisterBtn.addEventListener("click", () => renderCheckRegisterPage(showList));
+    checkRegisterBtn.addEventListener("click", () => renderCheckRegisterPage(showDetail, showList));
     const manageTeam = await renderManageTeamSection();
     const myInfo = await myInfoFor();
 
@@ -3356,7 +3366,7 @@ async function renderDashboard(user, org) {
     const newPersonBtn = el("button", { class: "secondary", text: "+ New recipient" });
     newPersonBtn.addEventListener("click", () => renderFinancialSecretaryIntakeFlow(showList));
     const checkRegisterBtn = el("button", { class: "secondary", text: "Check Register" });
-    checkRegisterBtn.addEventListener("click", () => renderCheckRegisterPage(showList));
+    checkRegisterBtn.addEventListener("click", () => renderCheckRegisterPage(showDetail, showList));
     const directory = await renderTeamDirectorySection();
     const myInfo = await myInfoFor();
     const section = el("section");
