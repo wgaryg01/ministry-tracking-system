@@ -2508,16 +2508,28 @@ async function renderCheckRegisterPage(onBack) {
     try {
       const data = await api("/check-register");
 
+      const currentFy = fiscalYearOf(new Date());
+      const currentFyBudget = data.fiscal_year_budgets[currentFy] || 0;
+      const currentFyBudgetUsed = data.fiscal_year_budget_used[currentFy] || 0;
+      const unusedBudget = Math.max(0, currentFyBudget - currentFyBudgetUsed);
+      const totalAvailable = data.designated_balance + unusedBudget;
+
+      const totalStrip = el("div", { class: "totals-strip" });
+      totalStrip.appendChild(el("div", { class: "stat" }, [
+        el("span", { class: "label", text: "Total available funds" }),
+        el("span", { class: "value", text: `${money(totalAvailable)} (${money(unusedBudget)} unused budget | ${money(data.designated_balance)} account balance)` }),
+      ]));
+      body.appendChild(totalStrip);
+
       const strip = el("div", { class: "totals-strip" });
       strip.appendChild(el("div", { class: "stat" }, [el("span", { class: "label", text: "Designated fund balance" }), el("span", { class: "value", text: money(data.designated_balance) })]));
-      const currentFy = fiscalYearOf(new Date());
       strip.appendChild(el("div", { class: "stat" }, [
         el("span", { class: "label", text: `FY${currentFy} budget` }),
-        el("span", { class: "value", text: money(data.fiscal_year_budgets[currentFy] || 0) }),
+        el("span", { class: "value", text: money(currentFyBudget) }),
       ]));
       strip.appendChild(el("div", { class: "stat" }, [
         el("span", { class: "label", text: `FY${currentFy} budget used` }),
-        el("span", { class: "value", text: money(data.fiscal_year_budget_used[currentFy] || 0) }),
+        el("span", { class: "value", text: money(currentFyBudgetUsed) }),
       ]));
       body.appendChild(strip);
 
