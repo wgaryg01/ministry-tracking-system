@@ -236,7 +236,14 @@ function formatDateDisplay(isoDate) {
 
 function formatDateTimeDisplay(isoDateTime) {
   if (!isoDateTime) return isoDateTime;
-  const dt = new Date(isoDateTime);
+  // The backend emits naive UTC timestamps (Python's datetime.utcnow().isoformat())
+  // with no timezone suffix. Per spec, a date-time string with a time
+  // component but no explicit timezone is parsed by JS as LOCAL time,
+  // not UTC — so without this, the displayed time is silently wrong
+  // (mislabeled UTC clock digits) for anyone not in UTC. Appending "Z"
+  // when no timezone marker is present makes the conversion real.
+  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(isoDateTime);
+  const dt = new Date(hasTimezone ? isoDateTime : isoDateTime + "Z");
   if (isNaN(dt)) return isoDateTime;
   const m = String(dt.getMonth() + 1).padStart(2, "0");
   const d = String(dt.getDate()).padStart(2, "0");
