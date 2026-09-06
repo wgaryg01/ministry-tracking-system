@@ -1294,6 +1294,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
         }
       } catch (err) {
         statusFeedback.textContent = err.message;
+        statusSelect.value = req.status;
       }
     });
     summaryRow.appendChild(statusSelect);

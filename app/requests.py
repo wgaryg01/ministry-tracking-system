@@ -126,10 +126,16 @@ def update_request(
     req.encrypted_situation_description = encrypt_field(payload.situation_description)
     _validate_status(payload.status)
 
-    if payload.status == "approved" and req.status != "approved":
+    if payload.status in ("approved", "completed") and req.status not in ("approved", "completed"):
+        eligible_voters = db.query(User).filter(User.role.in_([Role.ADMIN, Role.TEAMMEMBER]), User.is_active.is_(True)).count()
+        required_votes = eligible_voters // 2 + 1
         total_votes = db.query(RequestVote).filter(RequestVote.assistance_request_id == req.id).count()
-        if total_votes < 4:
-            raise HTTPException(status_code=400, detail=f"At least 4 votes are required before a request can be Approved (currently {total_votes})")
+        if total_votes < required_votes:
+            status_label = "Approved" if payload.status == "approved" else "Completed"
+            raise HTTPException(
+                status_code=400,
+                detail=f"A majority of eligible voters ({required_votes} of {eligible_voters}) is required before a request can be {status_label} (currently {total_votes})",
+            )
 
     req.status = payload.status
     req.payment_method = payload.payment_method
