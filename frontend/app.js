@@ -2539,6 +2539,13 @@ async function renderCheckRegisterPage(onBack) {
       startSection.appendChild(el("p", { class: "lead", text: data.starting_date
         ? `Currently set to ${money(data.starting_balance)} as of ${formatDateDisplay(data.starting_date)}.`
         : "Not set yet \u2014 enter the initial donation balance to begin." }));
+
+      const startFormWrap = el("div", { class: data.starting_date ? "hidden" : "" });
+      if (data.starting_date) {
+        const startEditToggle = el("button", { class: "link-btn", text: "Edit starting balance" });
+        startEditToggle.addEventListener("click", () => startFormWrap.classList.toggle("hidden"));
+        startSection.appendChild(startEditToggle);
+      }
       const startBalanceInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
       const startDateInput = el("input", { type: "date" });
       const startBtn = el("button", { class: "secondary", text: "Set starting balance" });
@@ -2555,18 +2562,24 @@ async function renderCheckRegisterPage(onBack) {
           startFeedback.appendChild(msg(err.message, "error"));
         }
       });
-      startSection.appendChild(el("div", { class: "field-row" }, [
+      startFormWrap.appendChild(el("div", { class: "field-row" }, [
         el("div", { class: "field" }, [el("label", { text: "Balance" }), startBalanceInput]),
         el("div", { class: "field" }, [el("label", { text: "As of date" }), startDateInput]),
       ]));
-      startSection.appendChild(startBtn);
-      startSection.appendChild(startFeedback);
+      startFormWrap.appendChild(startBtn);
+      startFormWrap.appendChild(startFeedback);
+      startSection.appendChild(startFormWrap);
       body.appendChild(startSection);
 
       // Fiscal year budget
       const budgetSection = el("section", { class: "cr-section" });
       budgetSection.appendChild(el("h2", { text: "Annual budget" }));
-      budgetSection.appendChild(el("p", { class: "lead", text: "Set each fiscal year's budget \u2014 available once designated funds are exhausted. Subject to change each September 1." }));
+      budgetSection.appendChild(el("p", { class: "lead", text: `FY${currentFy} budget: ${money(currentFyBudget)}. Subject to change each September 1.` }));
+      const budgetToggle = el("button", { class: "link-btn", text: "Edit budget" });
+      const budgetFormWrap = el("div", { class: "hidden" });
+      budgetToggle.addEventListener("click", () => budgetFormWrap.classList.toggle("hidden"));
+      budgetSection.appendChild(budgetToggle);
+
       const budgetYearInput = el("input", { type: "number", value: currentFy, placeholder: "Fiscal year" });
       const budgetAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
       const budgetBtn = el("button", { class: "secondary", text: "Set budget" });
@@ -2583,17 +2596,23 @@ async function renderCheckRegisterPage(onBack) {
           budgetFeedback.appendChild(msg(err.message, "error"));
         }
       });
-      budgetSection.appendChild(el("div", { class: "field-row" }, [
+      budgetFormWrap.appendChild(el("div", { class: "field-row" }, [
         el("div", { class: "field" }, [el("label", { text: "Fiscal year" }), budgetYearInput]),
         el("div", { class: "field" }, [el("label", { text: "Budget amount" }), budgetAmountInput]),
       ]));
-      budgetSection.appendChild(budgetBtn);
-      budgetSection.appendChild(budgetFeedback);
+      budgetFormWrap.appendChild(budgetBtn);
+      budgetFormWrap.appendChild(budgetFeedback);
+      budgetSection.appendChild(budgetFormWrap);
       body.appendChild(budgetSection);
 
       // Income
       const incomeSection = el("section", { class: "cr-section" });
       incomeSection.appendChild(el("h2", { text: "Record income" }));
+      const incomeToggle = el("button", { class: "link-btn", text: "Record a donation" });
+      const incomeFormWrap = el("div", { class: "hidden" });
+      incomeToggle.addEventListener("click", () => incomeFormWrap.classList.toggle("hidden"));
+      incomeSection.appendChild(incomeToggle);
+
       const incomeDateInput = el("input", { type: "date" });
       const incomeAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
       const incomeBtn = el("button", { class: "primary", text: "Record donation" });
@@ -2610,18 +2629,24 @@ async function renderCheckRegisterPage(onBack) {
           incomeFeedback.appendChild(msg(err.message, "error"));
         }
       });
-      incomeSection.appendChild(el("div", { class: "field-row" }, [
+      incomeFormWrap.appendChild(el("div", { class: "field-row" }, [
         el("div", { class: "field" }, [el("label", { text: "Date" }), incomeDateInput]),
         el("div", { class: "field" }, [el("label", { text: "Amount donated" }), incomeAmountInput]),
       ]));
-      incomeSection.appendChild(incomeBtn);
-      incomeSection.appendChild(incomeFeedback);
+      incomeFormWrap.appendChild(incomeBtn);
+      incomeFormWrap.appendChild(incomeFeedback);
+      incomeSection.appendChild(incomeFormWrap);
       body.appendChild(incomeSection);
 
       // Standalone expense (bank charges, fees — not tied to any request)
       const otherExpenseSection = el("section", { class: "cr-section" });
       otherExpenseSection.appendChild(el("h2", { text: "Record other expense" }));
       otherExpenseSection.appendChild(el("p", { class: "lead", text: "For bank charges, service fees, or anything else paid straight out of the account \u2014 not tied to a recipient's request." }));
+      const oeToggle = el("button", { class: "link-btn", text: "Record other expense" });
+      const oeFormWrap = el("div", { class: "hidden" });
+      oeToggle.addEventListener("click", () => oeFormWrap.classList.toggle("hidden"));
+      otherExpenseSection.appendChild(oeToggle);
+
       const oeDateInput = el("input", { type: "date" });
       const oeAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
       const oeCategoryInput = el("input", { type: "text", placeholder: "e.g. bank fee, service charge", required: "true" });
@@ -2652,19 +2677,20 @@ async function renderCheckRegisterPage(onBack) {
           oeFeedback.appendChild(msg(err.message, "error"));
         }
       });
-      otherExpenseSection.appendChild(el("div", { class: "field-row" }, [
+      oeFormWrap.appendChild(el("div", { class: "field-row" }, [
         el("div", { class: "field" }, [el("label", { text: "Date" }), oeDateInput]),
         el("div", { class: "field" }, [el("label", { text: "Amount" }), oeAmountInput]),
         el("div", { class: "field" }, [el("label", { text: "Category" }), oeCategoryInput]),
       ]));
-      otherExpenseSection.appendChild(el("div", { class: "field" }, [el("label", { text: "Paid to (optional)" }), oePayeeInput]));
-      otherExpenseSection.appendChild(el("div", { class: "field" }, [el("label", { class: "checkbox-label" }, [oeAlreadyPaidCb, "Already paid \u2014 leave unchecked to record as pending (awaiting a check)"])]));
-      otherExpenseSection.appendChild(el("div", { class: "field-row" }, [
+      oeFormWrap.appendChild(el("div", { class: "field" }, [el("label", { text: "Paid to (optional)" }), oePayeeInput]));
+      oeFormWrap.appendChild(el("div", { class: "field" }, [el("label", { class: "checkbox-label" }, [oeAlreadyPaidCb, "Already paid \u2014 leave unchecked to record as pending (awaiting a check)"])]));
+      oeFormWrap.appendChild(el("div", { class: "field-row" }, [
         el("div", { class: "field" }, [el("label", { text: "Date paid (if different)" }), oeDatePaidInput]),
         el("div", { class: "field" }, [el("label", { text: "Check # (optional)" }), oeCheckNumInput]),
       ]));
-      otherExpenseSection.appendChild(oeBtn);
-      otherExpenseSection.appendChild(oeFeedback);
+      oeFormWrap.appendChild(oeBtn);
+      oeFormWrap.appendChild(oeFeedback);
+      otherExpenseSection.appendChild(oeFormWrap);
       body.appendChild(otherExpenseSection);
 
       // Pending expenses awaiting payment
