@@ -1246,6 +1246,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     statusSelect.addEventListener("change", async (e) => {
       e.stopPropagation();
       statusFeedback.textContent = "Saving\u2026";
+      const wasPendingApproval = req.status === "pending_approval";
       try {
         await api(`/requests/${req.id}`, {
           method: "PUT",
@@ -1259,9 +1260,20 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
             helper_relationship: req.helper_relationship,
           }),
         });
+        req.status = statusSelect.value;
+        const nowPendingApproval = req.status === "pending_approval";
+        if (wasPendingApproval !== nowPendingApproval) {
+          // The Team Vote section only exists in the DOM at all when a
+          // request is Pending Approval — crossing into or out of that
+          // status means the section itself needs to appear or
+          // disappear, not just its buttons. Simplest correct way to
+          // do that is a full refresh, rather than hand-building or
+          // tearing down that whole section in place.
+          if (onChanged) onChanged();
+          return;
+        }
         // Update in place — no full-page refresh, so nothing else the
         // user was doing on this page (like a half-filled form) is lost.
-        req.status = statusSelect.value;
         statusFeedback.textContent = "Saved.";
         setTimeout(() => { statusFeedback.textContent = ""; }, 1500);
         const nowClosed = ["denied", "completed", "canceled"].includes(req.status);
