@@ -2697,7 +2697,7 @@ async function renderCheckRegisterPage(onBack) {
       if (data.pending_expenses.length === 0) {
         pendingSection.appendChild(el("div", { class: "empty-state", text: "Nothing awaiting payment." }));
       } else {
-        for (const p of data.pending_expenses) {
+        for (const [idx, p] of data.pending_expenses.entries()) {
           const row = el("div", { class: "ledger-row" });
           row.appendChild(el("span", { class: "date", text: formatDateDisplay(p.date) }));
           row.appendChild(el("span", { class: "category", text: p.category || "\u2014" }));
@@ -2742,7 +2742,7 @@ async function renderCheckRegisterPage(onBack) {
               payFeedback.appendChild(msg(err.message, "error"));
             }
           });
-          const wrap = el("div");
+          const wrap = el("div", { class: "cr-alt-row" + (idx % 2 === 1 ? " cr-alt-row-shaded" : "") });
           wrap.appendChild(row);
           if (attribution) wrap.appendChild(attribution);
           wrap.appendChild(el("div", { class: "field-row" }, [
@@ -2773,7 +2773,7 @@ async function renderCheckRegisterPage(onBack) {
           el("span", { text: "" }),
         ]);
         ledgerSection.appendChild(head);
-        for (const t of data.transactions) {
+        for (const [idx, t] of data.transactions.entries()) {
           const label = t.type === "income" ? "Donation" : `${t.category || "Expense"}${t.payee_name ? " to " + t.payee_name : ""}${t.check_number ? " (Check #" + t.check_number + ")" : ""}`;
           const editToggle = el("button", { class: "link-btn", text: "Edit" });
           const displayRow = el("div", { class: "report-row" }, [
@@ -2847,7 +2847,7 @@ async function renderCheckRegisterPage(onBack) {
           }
           editBody.appendChild(editFeedback);
 
-          const rowWrap = el("div");
+          const rowWrap = el("div", { class: "cr-alt-row" + (idx % 2 === 1 ? " cr-alt-row-shaded" : "") });
           rowWrap.appendChild(displayRow);
           if (t.last_edited_by) {
             rowWrap.appendChild(el("div", { class: "lead", text: `Last edited by ${t.last_edited_by} on ${formatDateTimeDisplay(t.last_edited_at)}` }));
