@@ -121,7 +121,7 @@ def invite_user(
 @router.get("")
 def list_users(
     role: Role | None = None,
-    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER, Role.FINANCIAL_SECRETARY)),
     db: Session = Depends(get_db),
 ):
     """
