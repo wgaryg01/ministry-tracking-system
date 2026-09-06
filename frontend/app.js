@@ -2705,13 +2705,14 @@ async function renderCheckRegisterPage(onBack) {
         pendingSection.appendChild(el("div", { class: "empty-state", text: "Nothing awaiting payment." }));
       } else {
         for (const [idx, p] of [...data.pending_expenses].reverse().entries()) {
-          const row = el("div", { class: "ledger-row" });
+          const rowAttrs = { class: "ledger-row" };
+          if (p.last_edited_by) {
+            rowAttrs.title = `Last edited by ${p.last_edited_by} on ${formatDateTimeDisplay(p.last_edited_at)}`;
+          }
+          const row = el("div", rowAttrs);
           row.appendChild(el("span", { class: "date", text: formatDateDisplay(p.date) }));
           row.appendChild(el("span", { class: "category", text: p.category || "\u2014" }));
           row.appendChild(el("span", { class: "amount", text: money(p.amount) }));
-          const attribution = p.last_edited_by
-            ? el("div", { class: "lead", text: `Last edited by ${p.last_edited_by} on ${formatDateTimeDisplay(p.last_edited_at)}` })
-            : null;
           const editAmountInput = el("input", { type: "number", step: "0.01", value: p.amount });
           const editCategoryInput = el("input", { type: "text", value: p.category || "" });
           const editPayeeInput = el("input", { type: "text", placeholder: "Who to make the check out to", value: p.payee_name || "" });
@@ -2751,7 +2752,6 @@ async function renderCheckRegisterPage(onBack) {
           });
           const wrap = el("div", { class: "cr-alt-row" + (idx % 2 === 1 ? " cr-alt-row-shaded" : "") });
           wrap.appendChild(row);
-          if (attribution) wrap.appendChild(attribution);
           wrap.appendChild(el("div", { class: "field-row" }, [
             el("div", { class: "field" }, [el("label", { text: "Amount" }), editAmountInput]),
             el("div", { class: "field" }, [el("label", { text: "Category" }), editCategoryInput]),
@@ -2783,7 +2783,11 @@ async function renderCheckRegisterPage(onBack) {
         for (const [idx, t] of [...data.transactions].reverse().entries()) {
           const label = t.type === "income" ? "Donation" : `${t.category || "Expense"}${t.payee_name ? " to " + t.payee_name : ""}${t.check_number ? " (Check #" + t.check_number + ")" : ""}`;
           const editToggle = el("button", { class: "link-btn", text: "Edit" });
-          const displayRow = el("div", { class: "report-row" }, [
+          const rowAttrs = { class: "report-row" };
+          if (t.last_edited_by) {
+            rowAttrs.title = `Last edited by ${t.last_edited_by} on ${formatDateTimeDisplay(t.last_edited_at)}`;
+          }
+          const displayRow = el("div", rowAttrs, [
             el("span", { class: "report-period", text: `${formatDateDisplay(t.date)} \u2014 ${label}` }),
             el("span", { class: "report-num", text: (t.type === "income" ? "+" : "-") + money(t.amount) }),
             el("span", { class: "report-num", text: t.from_budget > 0 ? money(t.from_budget) : "\u2014" }),
@@ -2856,9 +2860,6 @@ async function renderCheckRegisterPage(onBack) {
 
           const rowWrap = el("div", { class: "cr-alt-row" + (idx % 2 === 1 ? " cr-alt-row-shaded" : "") });
           rowWrap.appendChild(displayRow);
-          if (t.last_edited_by) {
-            rowWrap.appendChild(el("div", { class: "lead", text: `Last edited by ${t.last_edited_by} on ${formatDateTimeDisplay(t.last_edited_at)}` }));
-          }
           rowWrap.appendChild(editBody);
           ledgerSection.appendChild(rowWrap);
         }
