@@ -297,7 +297,23 @@ def cast_vote(
         resource_type="assistance_request", resource_id=request_id, details=f"support={payload.support}",
     )
 
-    return {"message": "Vote recorded"}
+    # If a majority of eligible voters have now voted No, the request
+    # is automatically denied — no need to wait for someone to
+    # manually change the status once the outcome is already decided.
+    if req.status == "pending_approval":
+        eligible_voters = db.query(User).filter(User.role.in_([Role.ADMIN, Role.TEAMMEMBER]), User.is_active.is_(True)).count()
+        required_votes = eligible_voters // 2 + 1
+        no_votes = db.query(RequestVote).filter(RequestVote.assistance_request_id == request_id, RequestVote.support.is_(False)).count()
+        if no_votes >= required_votes:
+            req.status = "denied"
+            db.commit()
+            log_audit_event(
+                db, current_user.id, "request_auto_denied",
+                resource_type="assistance_request", resource_id=request_id,
+                details=f"no_votes={no_votes} required={required_votes} eligible={eligible_voters}",
+            )
+
+    return {"message": "Vote recorded", "status": req.status}
 
 
 def _list_requests_by_status(db: Session, current_user: User, statuses: set, audit_action: str) -> list:

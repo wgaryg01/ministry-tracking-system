@@ -1458,7 +1458,16 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
       async function castVote(support) {
         voteFeedback.innerHTML = "";
         try {
-          await api(`/requests/${req.id}/vote`, { method: "PUT", body: JSON.stringify({ support }) });
+          const result = await api(`/requests/${req.id}/vote`, { method: "PUT", body: JSON.stringify({ support }) });
+          if (result.status !== req.status) {
+            // A majority No vote just auto-denied this request — the
+            // status itself changed as a side effect of this vote, so
+            // a full refresh is needed to correctly reflect that
+            // (closed messaging, activity/edit locking, etc.) rather
+            // than just patching the tally in place.
+            if (onChanged) onChanged();
+            return;
+          }
           const myName = currentUser.full_name || currentUser.email || currentUser.username;
           const existingVoter = req.votes.voters.find((v) => v.name === myName);
           if (req.votes.my_vote === true) req.votes.yes--;
@@ -1544,7 +1553,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     }
   });
 
-  if (req.status === "pending_approval") {
+  if (req.status === "pending_approval" || req.status === "approved") {
     viewActivitiesToggle.click();
   }
 
