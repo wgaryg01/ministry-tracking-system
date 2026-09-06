@@ -2697,7 +2697,7 @@ async function renderCheckRegisterPage(onBack) {
       if (data.pending_expenses.length === 0) {
         pendingSection.appendChild(el("div", { class: "empty-state", text: "Nothing awaiting payment." }));
       } else {
-        for (const [idx, p] of data.pending_expenses.entries()) {
+        for (const [idx, p] of [...data.pending_expenses].reverse().entries()) {
           const row = el("div", { class: "ledger-row" });
           row.appendChild(el("span", { class: "date", text: formatDateDisplay(p.date) }));
           row.appendChild(el("span", { class: "category", text: p.category || "\u2014" }));
@@ -2773,7 +2773,7 @@ async function renderCheckRegisterPage(onBack) {
           el("span", { text: "" }),
         ]);
         ledgerSection.appendChild(head);
-        for (const [idx, t] of data.transactions.entries()) {
+        for (const [idx, t] of [...data.transactions].reverse().entries()) {
           const label = t.type === "income" ? "Donation" : `${t.category || "Expense"}${t.payee_name ? " to " + t.payee_name : ""}${t.check_number ? " (Check #" + t.check_number + ")" : ""}`;
           const editToggle = el("button", { class: "link-btn", text: "Edit" });
           const displayRow = el("div", { class: "report-row" }, [
