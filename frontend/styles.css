@@ -202,6 +202,10 @@ button.secondary:hover { background: #CBC2AC; }
   padding: 18px;
   background: var(--paper-raised);
 }
+.identity-card.request-alt-row-shaded { background: var(--paper); }
+
+.activity-alt-row { padding: 4px 8px; margin: 0 -8px; border-radius: 4px; }
+.activity-alt-row-shaded { background: rgba(92, 122, 135, 0.1); }
 .identity-card dt { color: var(--ink-soft); font-size: 0.8rem; margin-top: 10px; }
 .identity-card dd { margin: 2px 0 0; }
 .action-row { display: flex; justify-content: space-between; align-items: center; }

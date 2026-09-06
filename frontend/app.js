@@ -1514,8 +1514,11 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     if (req.activities.length === 0) {
       list.appendChild(el("div", { class: "empty-state", text: "No activity logged yet." }));
     } else {
-      for (const a of req.activities) {
-        list.appendChild(renderActivityRow(a, canEdit(), onChanged, requestClosed, canApprovePayment));
+      for (const [actIdx, a] of req.activities.entries()) {
+        const activityRow = renderActivityRow(a, canEdit(), onChanged, requestClosed, canApprovePayment);
+        activityRow.classList.add("activity-alt-row");
+        if (actIdx % 2 === 1) activityRow.classList.add("activity-alt-row-shaded");
+        list.appendChild(activityRow);
       }
     }
     activitySection.appendChild(list);
@@ -1540,6 +1543,10 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
       activitiesBody.appendChild(el("p", { class: "lead", text: "This request is closed \u2014 activities can no longer be added." }));
     }
   });
+
+  if (req.status === "pending_approval") {
+    viewActivitiesToggle.click();
+  }
 
   return card;
 }
@@ -1729,8 +1736,11 @@ async function renderPersonDetail(identityId, onBack) {
       el("span", { class: "req-amount", text: "Total" }),
     ]));
   }
-  for (const req of data.requests) {
-    reqSection.appendChild(await renderRequestCard(req, identityId, isHidden, refresh));
+  for (const [reqIdx, req] of data.requests.entries()) {
+    const reqCard = await renderRequestCard(req, identityId, isHidden, refresh);
+    reqCard.classList.add("request-alt-row");
+    if (reqIdx % 2 === 1) reqCard.classList.add("request-alt-row-shaded");
+    reqSection.appendChild(reqCard);
   }
   if (canEdit()) {
     const newReqToggle = el("button", { class: "secondary", text: "+ New request" });
