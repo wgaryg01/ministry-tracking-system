@@ -3523,6 +3523,20 @@ function startGlobalPresence() {
 
   onlineToggle.addEventListener("click", () => onlineDropdown.classList.toggle("hidden"));
 
+  let knownServerStartedAt = null;
+  let updateBannerShown = false;
+
+  function showUpdateBanner() {
+    if (updateBannerShown) return;
+    updateBannerShown = true;
+    const banner = el("div", { class: "update-banner" });
+    banner.appendChild(el("span", { text: "A new version of this app is available." }));
+    const refreshBtn = el("button", { class: "secondary", text: "Refresh now" });
+    refreshBtn.addEventListener("click", () => window.location.reload());
+    banner.appendChild(refreshBtn);
+    document.body.appendChild(banner);
+  }
+
   async function tick() {
     try {
       const data = await api("/auth/heartbeat", { method: "POST" });
@@ -3534,6 +3548,16 @@ function startGlobalPresence() {
       }
       for (const o of others) {
         onlineDropdown.appendChild(el("div", { class: "lead", text: `${o.name} (${o.role})` }));
+      }
+
+      if (knownServerStartedAt === null) {
+        knownServerStartedAt = data.server_started_at;
+      } else if (data.server_started_at !== knownServerStartedAt) {
+        // The server process has restarted since this page loaded —
+        // new code is running. Never auto-reload, since that could
+        // wipe out something someone's in the middle of typing —
+        // just let them know, on their own terms.
+        showUpdateBanner();
       }
     } catch (e) {
       // Best-effort — never disrupt the app over a failed heartbeat.

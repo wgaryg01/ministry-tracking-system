@@ -417,3 +417,26 @@ button.secondary:hover { background: #CBC2AC; }
   .request-row > * { flex: 1 1 100%; text-align: left; }
   .request-row-head { display: none; }
 }
+
+.update-banner {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--slate-deep);
+  color: var(--paper-raised);
+  padding: 12px 18px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  z-index: 500;
+  font-size: 0.9rem;
+}
+.update-banner button.secondary {
+  background: var(--paper-raised);
+  border: none;
+  color: var(--slate-deep);
+  font-weight: 600;
+}

@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import create_engine, text
+from datetime import datetime
 import traceback
 
 from app.config import settings
@@ -24,6 +25,11 @@ from app.github_issues import create_github_issue, GitHubIssueError
 install_log_capture()
 
 app = FastAPI(title="Ministry Client Tracking System")
+
+# Changes every time this process restarts (i.e., every deploy). Used
+# to detect "new code is running" so connected browsers can be
+# prompted to refresh, without forcing a reload mid-task.
+APP_STARTED_AT = datetime.utcnow().isoformat()
 app.include_router(auth_router)
 app.include_router(elevation_router)
 app.include_router(identities_router)

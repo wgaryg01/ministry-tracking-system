@@ -309,10 +309,12 @@ def send_global_heartbeat(
         .filter(User.id != current_user.id, User.last_active_at != None, User.last_active_at >= cutoff)
         .all()
     )
+    from app.main import APP_STARTED_AT
     return {
         "others_online": [
             {"name": u.full_name or u.email or u.username, "role": _role_label(u.role)} for u in others
-        ]
+        ],
+        "server_started_at": APP_STARTED_AT,
     }
 
 
