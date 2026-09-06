@@ -379,8 +379,14 @@ def set_payment_approval(
                     status_code=400,
                     detail=f"Credit card payments require a unanimous Yes vote from every eligible team member ({yes_votes} of {eligible_voters} have voted Yes)",
                 )
-        # Check payment relies on the majority already required to
-        # reach Approved status — no additional vote check needed here.
+        elif req.payment_method == "check" and not activity.payee_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Edit this activity and enter who to make the check out to before approving payment",
+            )
+        # Check payment (with a payee name already set) relies on the
+        # majority already required to reach Approved status — no
+        # additional vote check needed here.
 
     existing_entry = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.activity_id == activity.id).first()
 

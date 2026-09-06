@@ -216,7 +216,7 @@ class StandaloneExpenseCreate(BaseModel):
     transaction_date: date
     amount: float
     category: str  # e.g. "bank fee", "service charge"
-    payee_name: str | None = None
+    payee_name: str
     already_paid: bool = True  # bank fees/auto-deductions are usually already gone by the time anyone enters them
     date_paid: date | None = None  # required if already_paid
     check_number: str | None = None  # optional — many of these (bank fees) have no check at all
@@ -235,6 +235,8 @@ def add_standalone_expense(
     """
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
+    if not payload.payee_name.strip():
+        raise HTTPException(status_code=400, detail="Payee is required")
     if payload.already_paid and not payload.date_paid:
         raise HTTPException(status_code=400, detail="Date paid is required for an already-paid expense")
 
@@ -334,7 +336,7 @@ def update_income(
 class ExpenseEntryUpdate(BaseModel):
     amount: float
     category: str | None = None
-    payee_name: str | None = None
+    payee_name: str
     payment_method: str | None = None
     date_paid: date | None = None
     check_number: str | None = None
@@ -358,12 +360,14 @@ def update_expense(
         raise HTTPException(status_code=404, detail="Expense entry not found")
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
+    if not payload.payee_name.strip():
+        raise HTTPException(status_code=400, detail="Payee is required")
 
     old = f"amount={entry.amount} category={entry.category} payee={entry.payee_name} date_paid={entry.date_paid} check_number={entry.check_number}"
 
     entry.amount = payload.amount
     entry.category = payload.category
-    entry.payee_name = payload.payee_name.strip() if payload.payee_name else None
+    entry.payee_name = payload.payee_name.strip()
     entry.payment_method = payload.payment_method
 
     if entry.status == "paid":
@@ -452,6 +456,31 @@ def mark_expense_paid(
         db, current_user.id, "check_register_expense_paid",
         resource_type="check_register_entry", resource_id=entry.id, details=f"check_number={entry.check_number}",
     )
+
+    # If this was the last pending charge tied to its request, the
+    # request moves on to Completed automatically — matches the
+    # workflow of vote to Approved, Financial Secretary pays
+    # everything out, request completes, with no separate manual step
+    # needed once the last check has actually gone out.
+    if entry.activity_id:
+        activity = db.query(ActivityRecord).filter(ActivityRecord.id == entry.activity_id).first()
+        if activity:
+            req = db.query(AssistanceRequest).filter(AssistanceRequest.id == activity.assistance_request_id).first()
+            if req and req.status == "approved":
+                still_pending = (
+                    db.query(CheckRegisterEntry)
+                    .join(ActivityRecord, CheckRegisterEntry.activity_id == ActivityRecord.id)
+                    .filter(ActivityRecord.assistance_request_id == req.id, CheckRegisterEntry.status == "pending")
+                    .count()
+                )
+                if still_pending == 0:
+                    req.status = "completed"
+                    db.commit()
+                    log_audit_event(
+                        db, current_user.id, "request_auto_completed",
+                        resource_type="assistance_request", resource_id=req.id,
+                        details="all charges paid",
+                    )
 
     return {"message": "Marked paid"}
 

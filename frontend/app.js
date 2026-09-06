@@ -958,6 +958,7 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
   amountCol.appendChild(el("span", { class: "amount", text: amountText }));
   if (canEdit && a.amount_spent != null) {
     const paymentMethodSet = Boolean(req.payment_method);
+    const needsPayeeForCheck = req.payment_method === "check" && !a.payee_name;
     const approveCb = el("input", { type: "checkbox" });
     approveCb.checked = a.payment_approved;
     if (!canApprovePayment) {
@@ -966,6 +967,9 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
     } else if (!paymentMethodSet) {
       approveCb.setAttribute("disabled", "true");
       approveCb.title = "Select a payment method on this request before approving payment";
+    } else if (needsPayeeForCheck) {
+      approveCb.setAttribute("disabled", "true");
+      approveCb.title = "Edit this activity and enter who to make the check out to before approving payment";
     }
     const approveFeedback = el("div", { class: "lead" });
     approveCb.addEventListener("change", async () => {
@@ -985,6 +989,9 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
     });
     amountCol.appendChild(el("label", {}, [approveCb, " Approved to be paid"]));
     amountCol.appendChild(approveFeedback);
+    if (needsPayeeForCheck) {
+      amountCol.appendChild(el("div", { class: "lead", text: "\u26a0 Edit this activity to add who to make the check out to" }));
+    }
 
     if (canApprovePayment) {
       const canOfferCC = req.payment_method === "credit_card" || (req.votes && req.votes.yes >= req.votes.eligible_voters && req.votes.eligible_voters > 0);
@@ -997,6 +1004,10 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
       }
       const pmSelect = el("select", {}, pmOptions);
       pmSelect.value = req.payment_method || "";
+      if (!a.payee_name) {
+        pmSelect.setAttribute("disabled", "true");
+        pmSelect.title = "Edit this activity and enter who to make the check out to before selecting a payment method";
+      }
       const pmFeedback = el("div", { class: "lead" });
       pmSelect.addEventListener("change", async () => {
         pmFeedback.textContent = "";
@@ -1016,6 +1027,22 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
             }),
           });
           req.payment_method = pmSelect.value || null;
+
+          // Selecting a payment method also approves this activity's
+          // payment, if it isn't already — same action and same
+          // endpoint as checking the box by hand, just triggered from
+          // here too, so nothing needs a second manual step.
+          if (pmSelect.value && !approveCb.checked && a.payee_name) {
+            try {
+              await api(`/activities/${a.id}/payment-approval`, {
+                method: "PUT",
+                body: JSON.stringify({ payment_approved: true }),
+              });
+            } catch (err) {
+              pmFeedback.textContent = `Payment method saved, but couldn't auto-approve payment: ${err.message}`;
+            }
+          }
+
           if (onSaved) onSaved();
         } catch (err) {
           pmFeedback.textContent = err.message;
@@ -1024,6 +1051,9 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
       });
       amountCol.appendChild(pmSelect);
       amountCol.appendChild(pmFeedback);
+      if (!a.payee_name) {
+        amountCol.appendChild(el("div", { class: "lead", text: "\u26a0 Edit this activity to add who to make the check out to before selecting a payment method" }));
+      }
     }
   }
 
@@ -1803,7 +1833,9 @@ async function renderPersonDetail(identityId, onBack) {
   }
 
   const reqSection = el("section");
-  reqSection.appendChild(el("h2", { text: "Assistance Requests" }));
+  const reqHeadingRow = el("div", { style: "display: flex; align-items: center; justify-content: space-between; gap: 12px;" });
+  reqHeadingRow.appendChild(el("h2", { text: "Assistance Requests" }));
+  reqSection.appendChild(reqHeadingRow);
   if (data.requests.length === 0) {
     reqSection.appendChild(el("div", { class: "empty-state", text: "No requests yet." }));
   } else {
@@ -1832,6 +1864,13 @@ async function renderPersonDetail(identityId, onBack) {
     });
     reqSection.appendChild(newReqToggle);
     reqSection.appendChild(newReqWrap);
+
+    const jumpToNewReqBtn = el("button", { class: "secondary", text: "+ New request" });
+    jumpToNewReqBtn.addEventListener("click", () => {
+      if (newReqWrap.classList.contains("hidden")) newReqToggle.click();
+      newReqToggle.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    reqHeadingRow.appendChild(jumpToNewReqBtn);
   }
   container.appendChild(reqSection);
 
@@ -2776,7 +2815,7 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
       const oeDateInput = el("input", { type: "date" });
       const oeAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
       const oeCategoryInput = el("input", { type: "text", placeholder: "e.g. bank fee, service charge", required: "true" });
-      const oePayeeInput = el("input", { type: "text", placeholder: "Optional" });
+      const oePayeeInput = el("input", { type: "text", required: "true", placeholder: "Who to make the check out to" });
       const oeAlreadyPaidCb = el("input", { type: "checkbox" });
       oeAlreadyPaidCb.checked = true;
       const oeDatePaidInput = el("input", { type: "date" });
@@ -2842,7 +2881,7 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
           row.appendChild(el("span", { class: "amount", text: money(p.amount) }));
           const editAmountInput = el("input", { type: "number", step: "0.01", value: p.amount });
           const editCategoryInput = el("input", { type: "text", value: p.category || "" });
-          const editPayeeInput = el("input", { type: "text", placeholder: "Who to make the check out to", value: p.payee_name || "" });
+          const editPayeeInput = el("input", { type: "text", required: "true", placeholder: "Who to make the check out to", value: p.payee_name || "" });
           const editPaymentMethodSelect = el("select", {}, [
             el("option", { value: "", text: "Not yet determined" }),
             el("option", { value: "check", text: "Check" }),
@@ -2869,7 +2908,7 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
             }
           });
           const dateePaidInput = el("input", { type: "date" });
-          const checkNumInput = el("input", { type: "text", placeholder: "Check #" });
+          const checkNumInput = el("input", { type: "text", placeholder: "Check #", value: p.payment_method === "credit_card" ? "CC" : "" });
           const payBtn = el("button", { class: "secondary", text: "Mark paid" });
           const payFeedback = el("div");
           payBtn.addEventListener("click", async () => {
@@ -2963,7 +3002,7 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
           } else {
             const amountInput = el("input", { type: "number", step: "0.01", value: t.amount });
             const categoryInput = el("input", { type: "text", value: t.category || "" });
-            const payeeInput = el("input", { type: "text", value: t.payee_name || "" });
+            const payeeInput = el("input", { type: "text", required: "true", value: t.payee_name || "" });
             const paymentMethodSelect = el("select", {}, [
               el("option", { value: "", text: "Not yet determined" }),
               el("option", { value: "check", text: "Check" }),
