@@ -37,6 +37,24 @@ function money(n) {
 }
 
 let _categoryOptionsCache = null;
+const ACTIVITY_CATEGORIES = ["Auto Repair", "Groceries", "Home Repair", "Medical Bill", "Medication", "Notes", "Rent", "Utilities"];
+
+function buildCategorySelect(currentValue) {
+  const options = [el("option", { value: "", text: "Select a category" })];
+  for (const c of ACTIVITY_CATEGORIES) {
+    options.push(el("option", { value: c, text: c }));
+  }
+  // Safety net for older/historical activities whose category isn't
+  // in the predefined list — keep it visible rather than silently
+  // dropping it out of the selection.
+  if (currentValue && !ACTIVITY_CATEGORIES.includes(currentValue)) {
+    options.push(el("option", { value: currentValue, text: currentValue }));
+  }
+  const select = el("select", {}, options);
+  select.value = currentValue || "";
+  return select;
+}
+
 async function categoryDatalist(id) {
   const datalist = el("datalist", { id });
   try {
@@ -477,10 +495,9 @@ let _datalistCounter = 0;
 
 async function renderAddActivityForm(requestId, onLogged, onDirty, onClean) {
   const feedback = el("div");
-  const datalistId = `category-options-${_datalistCounter++}`;
   const notesField = buildNotesField();
   const amountInput = el("input", { type: "number", step: "0.01", min: "0", placeholder: "0.00" });
-  const categoryInput = el("input", { type: "text", list: datalistId, placeholder: "e.g. groceries, utilities, rent" });
+  const categoryInput = buildCategorySelect(null);
   const payeeNameInput = el("input", { type: "text", placeholder: "e.g. landlord, utility company \u2014 if not the recipient" });
   const dateInput = el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
   const attachmentField = buildAttachmentUploadField();
@@ -557,7 +574,6 @@ async function renderAddActivityForm(requestId, onLogged, onDirty, onClean) {
   });
 
   const wrap = el("div");
-  categoryDatalist(datalistId).then((dl) => wrap.appendChild(dl));
   wrap.appendChild(form);
   wrap.appendChild(feedback);
   return wrap;
@@ -857,10 +873,9 @@ function renderAccessHistorySection(logsEndpoint) {
 
 async function renderEditActivityForm(activity, onSaved, onCancel) {
   const feedback = el("div");
-  const datalistId = `category-options-${_datalistCounter++}`;
   const notesField = buildNotesField(activity);
   const amountInput = el("input", { type: "number", step: "0.01", min: "0", value: activity.amount_spent != null ? activity.amount_spent : "" });
-  const categoryInput = el("input", { type: "text", list: datalistId, value: activity.category || "" });
+  const categoryInput = buildCategorySelect(activity.category);
   const payeeNameInput = el("input", { type: "text", placeholder: "e.g. landlord, utility company \u2014 if not the recipient", value: activity.payee_name || "" });
   const dateInput = el("input", { type: "date", value: activity.activity_date });
   const attachmentField = buildAttachmentUploadField();
@@ -927,13 +942,12 @@ async function renderEditActivityForm(activity, onSaved, onCancel) {
   });
 
   const wrap = el("div");
-  categoryDatalist(datalistId).then((dl) => wrap.appendChild(dl));
   wrap.appendChild(form);
   wrap.appendChild(feedback);
   return wrap;
 }
 
-function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment, paymentMethodSet) {
+function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment, req) {
   const wrap = el("div");
   const statusSuffix = a.status && a.status !== "completed" ? ` \u2014 ${a.status}${a.scheduled_at ? " for " + formatDateTimeDisplay(a.scheduled_at) : ""}` : "";
   const amountText = a.amount_spent != null
@@ -943,6 +957,7 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
   const amountCol = el("div", { class: "amount-col" });
   amountCol.appendChild(el("span", { class: "amount", text: amountText }));
   if (canEdit && a.amount_spent != null) {
+    const paymentMethodSet = Boolean(req.payment_method);
     const approveCb = el("input", { type: "checkbox" });
     approveCb.checked = a.payment_approved;
     if (!canApprovePayment) {
@@ -970,6 +985,46 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
     });
     amountCol.appendChild(el("label", {}, [approveCb, " Approved to be paid"]));
     amountCol.appendChild(approveFeedback);
+
+    if (canApprovePayment) {
+      const canOfferCC = req.payment_method === "credit_card" || (req.votes && req.votes.yes >= req.votes.eligible_voters && req.votes.eligible_voters > 0);
+      const pmOptions = [
+        el("option", { value: "", text: "Payment method: not yet selected" }),
+        el("option", { value: "check", text: "Payment method: Check" }),
+      ];
+      if (canOfferCC) {
+        pmOptions.push(el("option", { value: "credit_card", text: "Payment method: Credit Card" }));
+      }
+      const pmSelect = el("select", {}, pmOptions);
+      pmSelect.value = req.payment_method || "";
+      const pmFeedback = el("div", { class: "lead" });
+      pmSelect.addEventListener("change", async () => {
+        pmFeedback.textContent = "";
+        pmSelect.setAttribute("disabled", "true");
+        try {
+          await api(`/requests/${req.id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              assistance_type: req.assistance_type,
+              situation_description: req.situation_description,
+              status: req.status,
+              payment_method: pmSelect.value || null,
+              request_received_date: req.request_received_date,
+              helper_name: req.helper_name,
+              helper_contact: req.helper_contact,
+              helper_relationship: req.helper_relationship,
+            }),
+          });
+          req.payment_method = pmSelect.value || null;
+          if (onSaved) onSaved();
+        } catch (err) {
+          pmFeedback.textContent = err.message;
+          pmSelect.removeAttribute("disabled");
+        }
+      });
+      amountCol.appendChild(pmSelect);
+      amountCol.appendChild(pmFeedback);
+    }
   }
 
   const row = el("div", { class: "ledger-row" }, [
@@ -1047,7 +1102,6 @@ function renderNewRequestForm(identityId, onCreated, onCancel) {
   const paymentMethodSelect = el("select", {}, [
     el("option", { value: "", text: "Not yet determined" }),
     el("option", { value: "check", text: "Check" }),
-    el("option", { value: "credit_card", text: "Credit Card" }),
   ]);
   const submitBtn = el("button", { class: "primary", text: "Create request" });
   const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
@@ -1165,11 +1219,15 @@ function renderEditRequestForm(req, onSaved, onCancel) {
   helperContactInput.value = req.helper_contact || "";
   const helperRelInput = el("input", { type: "text", placeholder: "Helper's relationship to applicant" });
   helperRelInput.value = req.helper_relationship || "";
-  const paymentMethodSelect = el("select", {}, [
+  const canOfferCreditCard = req.payment_method === "credit_card" || (req.votes && req.votes.yes >= req.votes.eligible_voters && req.votes.eligible_voters > 0);
+  const paymentMethodOptions = [
     el("option", { value: "", text: "Not yet determined" }),
     el("option", { value: "check", text: "Check" }),
-    el("option", { value: "credit_card", text: "Credit Card" }),
-  ]);
+  ];
+  if (canOfferCreditCard) {
+    paymentMethodOptions.push(el("option", { value: "credit_card", text: "Credit Card" }));
+  }
+  const paymentMethodSelect = el("select", {}, paymentMethodOptions);
   paymentMethodSelect.value = req.payment_method || "";
   const submitBtn = el("button", { class: "primary", text: "Save" });
   const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
@@ -1254,6 +1312,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
       e.stopPropagation();
       statusFeedback.textContent = "Saving\u2026";
       const wasPendingApproval = req.status === "pending_approval";
+      const wasApproved = req.status === "approved";
       try {
         await api(`/requests/${req.id}`, {
           method: "PUT",
@@ -1261,6 +1320,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
             assistance_type: req.assistance_type,
             situation_description: req.situation_description,
             status: statusSelect.value,
+            payment_method: req.payment_method,
             request_received_date: req.request_received_date,
             helper_name: req.helper_name,
             helper_contact: req.helper_contact,
@@ -1269,13 +1329,15 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
         });
         req.status = statusSelect.value;
         const nowPendingApproval = req.status === "pending_approval";
-        if (wasPendingApproval !== nowPendingApproval) {
+        const nowApproved = req.status === "approved";
+        if (wasPendingApproval !== nowPendingApproval || wasApproved !== nowApproved) {
           // The Team Vote section only exists in the DOM at all when a
-          // request is Pending Approval — crossing into or out of that
-          // status means the section itself needs to appear or
-          // disappear, not just its buttons. Simplest correct way to
-          // do that is a full refresh, rather than hand-building or
-          // tearing down that whole section in place.
+          // request is Pending Approval, and the "Approved to be paid"
+          // checkbox's enabled state depends on being exactly
+          // Approved — crossing either boundary means something
+          // structural needs to appear, disappear, or re-enable, not
+          // just a label update. Simplest correct way to do that is a
+          // full refresh.
           if (onChanged) onChanged();
           return;
         }
@@ -1531,7 +1593,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
       list.appendChild(el("div", { class: "empty-state", text: "No activity logged yet." }));
     } else {
       for (const [actIdx, a] of req.activities.entries()) {
-        const activityRow = renderActivityRow(a, canEdit(), onChanged, requestClosed, canApprovePayment, Boolean(req.payment_method));
+        const activityRow = renderActivityRow(a, canEdit(), onChanged, requestClosed, canApprovePayment, req);
         activityRow.classList.add("activity-alt-row");
         if (actIdx % 2 === 1) activityRow.classList.add("activity-alt-row-shaded");
         list.appendChild(activityRow);

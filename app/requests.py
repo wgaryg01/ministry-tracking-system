@@ -5,7 +5,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, Identity, AssistanceRequest, RequestDocument, RequestVote, ActivityRecord
+from app.models import User, Role, Identity, AssistanceRequest, RequestDocument, RequestVote, ActivityRecord, CheckRegisterEntry
 from app.upload_utils import read_upload_limited
 from app.permissions import require_role, can_decrypt_pii, log_pii_access
 from app.auth import get_current_user
@@ -137,6 +137,16 @@ def update_request(
                 detail=f"A majority of eligible voters ({required_votes} of {eligible_voters}) is required before a request can be {status_label} (currently {total_votes})",
             )
 
+    if payload.payment_method == "credit_card":
+        eligible_voters = db.query(User).filter(User.role.in_([Role.ADMIN, Role.TEAMMEMBER]), User.is_active.is_(True)).count()
+        yes_votes = db.query(RequestVote).filter(RequestVote.assistance_request_id == req.id, RequestVote.support.is_(True)).count()
+        if yes_votes < eligible_voters:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Credit card can only be selected once every eligible team member has voted Yes ({yes_votes} of {eligible_voters} have voted Yes)",
+            )
+
+    old_status = req.status
     req.status = payload.status
     req.payment_method = payload.payment_method
     req.applicant_acknowledged = False
@@ -147,6 +157,28 @@ def update_request(
     req.last_edited_by_user_id = current_user.id
     req.last_edited_at = datetime.utcnow()
     db.commit()
+
+    # Moving back to Pending Approval undoes the earlier approval
+    # decision — any activity whose payment was approved but not yet
+    # actually paid by the Financial Secretary should reset too, since
+    # that approval was only ever valid for the vote outcome that's
+    # now being revisited. Anything already paid is left alone; that's
+    # real money that's gone out the door and needs the Financial
+    # Secretary's explicit reversal, not a silent status-change side effect.
+    if old_status != "pending_approval" and req.status == "pending_approval":
+        req.payment_method = None
+        activities = db.query(ActivityRecord).filter(ActivityRecord.assistance_request_id == req.id, ActivityRecord.payment_approved.is_(True)).all()
+        for activity in activities:
+            entry = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.activity_id == activity.id).first()
+            if entry and entry.status == "pending":
+                db.delete(entry)
+                activity.payment_approved = False
+                log_audit_event(
+                    db, current_user.id, "activity_payment_approval_reset",
+                    resource_type="activity_record", resource_id=activity.id,
+                    details="request reverted to pending_approval before payment was issued",
+                )
+        db.commit()
 
     log_audit_event(db, current_user.id, "request_updated", resource_type="assistance_request", resource_id=req.id)
 
@@ -300,10 +332,13 @@ def cast_vote(
     # If a majority of eligible voters have now voted No, the request
     # is automatically denied — no need to wait for someone to
     # manually change the status once the outcome is already decided.
+    # Conversely, if every single eligible voter has voted Yes
+    # (unanimous), the request is automatically approved.
     if req.status == "pending_approval":
         eligible_voters = db.query(User).filter(User.role.in_([Role.ADMIN, Role.TEAMMEMBER]), User.is_active.is_(True)).count()
         required_votes = eligible_voters // 2 + 1
         no_votes = db.query(RequestVote).filter(RequestVote.assistance_request_id == request_id, RequestVote.support.is_(False)).count()
+        yes_votes = db.query(RequestVote).filter(RequestVote.assistance_request_id == request_id, RequestVote.support.is_(True)).count()
         if no_votes >= required_votes:
             req.status = "denied"
             db.commit()
@@ -311,6 +346,14 @@ def cast_vote(
                 db, current_user.id, "request_auto_denied",
                 resource_type="assistance_request", resource_id=request_id,
                 details=f"no_votes={no_votes} required={required_votes} eligible={eligible_voters}",
+            )
+        elif eligible_voters > 0 and yes_votes >= eligible_voters:
+            req.status = "approved"
+            db.commit()
+            log_audit_event(
+                db, current_user.id, "request_auto_approved",
+                resource_type="assistance_request", resource_id=request_id,
+                details=f"yes_votes={yes_votes} eligible={eligible_voters}",
             )
 
     return {"message": "Vote recorded", "status": req.status}

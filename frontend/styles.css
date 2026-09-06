@@ -415,8 +415,16 @@ button.secondary:hover { background: #CBC2AC; }
 }
 
 @media (max-width: 480px) {
-  .ledger-row { flex-wrap: wrap; }
+  .ledger-row { flex-wrap: wrap; row-gap: 4px; }
   .ledger-row .who { width: auto; }
+  /* Same fix as request-row below: a squeezed flex:1 column next to
+     fixed-width siblings (especially now that amount-col can also
+     hold a payment-method select) causes character-by-character
+     wrapping rather than wrapping at word boundaries. Each column
+     gets its own full-width line instead of fighting for a shared,
+     too-narrow row. */
+  .ledger-row > * { flex: 1 1 100%; text-align: left; }
+  .ledger-row .amount-col { align-items: flex-start; width: auto; }
   .header-inner { flex-wrap: wrap; row-gap: 6px; }
   .header-user { width: 100%; justify-content: flex-end; }
   .user-email { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

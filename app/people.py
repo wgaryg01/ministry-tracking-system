@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Identity, ActivityRecord, AssistanceRequest, RequestDocument, ActivityAssignment, NotificationRule, RequestVote
+from app.models import User, Role, Identity, ActivityRecord, AssistanceRequest, RequestDocument, ActivityAssignment, NotificationRule, RequestVote
 from app.auth import get_current_user
 from app.permissions import can_decrypt_pii, log_pii_access
 from app.crypto import decrypt_field, decode_checklist
@@ -366,6 +366,7 @@ def get_person(
             "household_members": [], "total_adults": None, "total_children": None, "total_household": None,
         }
 
+    eligible_voters = db.query(User).filter(User.role.in_([Role.ADMIN, Role.TEAMMEMBER]), User.is_active.is_(True)).count()
     requests_out = []
     for req in db.query(AssistanceRequest).filter(AssistanceRequest.identity_id == identity_id).order_by(AssistanceRequest.created_at.desc()).all():
         activities = (
@@ -395,6 +396,7 @@ def get_person(
             "no": no_votes,
             "my_vote": my_vote_row.support if my_vote_row else None,
             "voters": voters,
+            "eligible_voters": eligible_voters,
         }
 
         if can_see_pii:
