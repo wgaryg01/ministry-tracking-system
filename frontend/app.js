@@ -933,7 +933,7 @@ async function renderEditActivityForm(activity, onSaved, onCancel) {
   return wrap;
 }
 
-function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment) {
+function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment, paymentMethodSet) {
   const wrap = el("div");
   const statusSuffix = a.status && a.status !== "completed" ? ` \u2014 ${a.status}${a.scheduled_at ? " for " + formatDateTimeDisplay(a.scheduled_at) : ""}` : "";
   const amountText = a.amount_spent != null
@@ -948,9 +948,14 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
     if (!canApprovePayment) {
       approveCb.setAttribute("disabled", "true");
       approveCb.title = "Payment approval can only be changed while the request's status is Approved";
+    } else if (!paymentMethodSet) {
+      approveCb.setAttribute("disabled", "true");
+      approveCb.title = "Select a payment method on this request before approving payment";
     }
+    const approveFeedback = el("div", { class: "lead" });
     approveCb.addEventListener("change", async () => {
       approveCb.setAttribute("disabled", "true");
+      approveFeedback.textContent = "";
       try {
         await api(`/activities/${a.id}/payment-approval`, {
           method: "PUT",
@@ -960,9 +965,11 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment
       } catch (err) {
         approveCb.checked = !approveCb.checked;
         approveCb.removeAttribute("disabled");
+        approveFeedback.textContent = err.message;
       }
     });
     amountCol.appendChild(el("label", {}, [approveCb, " Approved to be paid"]));
+    amountCol.appendChild(approveFeedback);
   }
 
   const row = el("div", { class: "ledger-row" }, [
@@ -1524,7 +1531,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
       list.appendChild(el("div", { class: "empty-state", text: "No activity logged yet." }));
     } else {
       for (const [actIdx, a] of req.activities.entries()) {
-        const activityRow = renderActivityRow(a, canEdit(), onChanged, requestClosed, canApprovePayment);
+        const activityRow = renderActivityRow(a, canEdit(), onChanged, requestClosed, canApprovePayment, Boolean(req.payment_method));
         activityRow.classList.add("activity-alt-row");
         if (actIdx % 2 === 1) activityRow.classList.add("activity-alt-row-shaded");
         list.appendChild(activityRow);

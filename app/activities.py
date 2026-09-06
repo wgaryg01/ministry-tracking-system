@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, ActivityRecord, AssistanceRequest, ActivityAssignment, NotificationRule, ActivityAttachment, CheckRegisterEntry
+from app.models import User, Role, ActivityRecord, AssistanceRequest, ActivityAssignment, NotificationRule, ActivityAttachment, CheckRegisterEntry, RequestVote
 from app.upload_utils import read_upload_limited
 from app.permissions import require_role, can_decrypt_pii, log_pii_access, can_manage_check_register
 from app.auth import get_current_user
@@ -362,6 +362,25 @@ def set_payment_approval(
     req = db.query(AssistanceRequest).filter(AssistanceRequest.id == activity.assistance_request_id).first()
     if req and req.status != "approved":
         raise HTTPException(status_code=400, detail="Payment approval can only be changed while the request's status is Approved")
+
+    if payload.payment_approved and req:
+        if not req.payment_method:
+            raise HTTPException(status_code=400, detail="Select a payment method on this request before approving payment")
+
+        if req.payment_method == "credit_card":
+            # Credit card requires full unanimous buy-in — every
+            # eligible voter must have voted, and all of them Yes —
+            # stricter than the plain majority that was already
+            # enough to reach Approved in the first place.
+            eligible_voters = db.query(User).filter(User.role.in_([Role.ADMIN, Role.TEAMMEMBER]), User.is_active.is_(True)).count()
+            yes_votes = db.query(RequestVote).filter(RequestVote.assistance_request_id == req.id, RequestVote.support.is_(True)).count()
+            if yes_votes < eligible_voters:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Credit card payments require a unanimous Yes vote from every eligible team member ({yes_votes} of {eligible_voters} have voted Yes)",
+                )
+        # Check payment relies on the majority already required to
+        # reach Approved status — no additional vote check needed here.
 
     existing_entry = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.activity_id == activity.id).first()
 
