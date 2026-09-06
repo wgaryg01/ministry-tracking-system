@@ -157,6 +157,10 @@ def create_activity(
         last_edited_at=datetime.utcnow(),
     )
     db.add(activity)
+
+    if req.status == "new":
+        req.status = "in_progress"
+
     db.commit()
     db.refresh(activity)
 

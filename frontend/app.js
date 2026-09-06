@@ -1134,9 +1134,9 @@ function renderDocumentUploadForm(requestId, onUploaded) {
 }
 
 const REQUEST_STATUS_OPTIONS = [
-  ["new", "New"], ["pending_approval", "Pending Approval"], ["approved", "Approved"], ["denied", "Denied"],
-  ["in_progress", "In Progress"], ["on_hold", "On Hold"],
-  ["completed", "Completed"], ["canceled", "Canceled"],
+  ["new", "New"], ["in_progress", "In Progress"], ["pending_approval", "Pending Approval"],
+  ["approved", "Approved"], ["on_hold", "On Hold"],
+  ["completed", "Completed"], ["denied", "Denied"], ["canceled", "Canceled"],
 ];
 
 function formatRequestStatus(status) {
@@ -1407,14 +1407,17 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     body.appendChild(docSection);
   }
 
-  // Votes only apply during the Pending Approval phase — hidden
-  // entirely for every other status, not just when closed.
-  if (!isHidden && req.status === "pending_approval") {
+  // The section itself persists once any votes exist, even after the
+  // request moves past Pending Approval — only the active voting
+  // buttons are limited to that one phase; the recorded result stays
+  // visible as a permanent part of the request's history.
+  const hasVotes = req.votes.yes > 0 || req.votes.no > 0;
+  if (!isHidden && (req.status === "pending_approval" || hasVotes)) {
     const voteSection = el("section");
     voteSection.appendChild(el("h2", { text: "Team vote" }));
 
-    const votingClosed = ["denied", "completed", "canceled"].includes(req.status);
-    const closedMsg = el("p", { class: "lead", text: votingClosed ? "Voting is closed for this request." : "Do you support this request?" });
+    const canVoteNow = req.status === "pending_approval";
+    const closedMsg = el("p", { class: "lead", text: canVoteNow ? "Do you support this request?" : "Voting has closed for this request." });
     voteClosedMessage = closedMsg;
     voteSection.appendChild(closedMsg);
 
@@ -1440,7 +1443,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     };
     updateTally();
 
-    if (!votingClosed) {
+    if (canVoteNow) {
       const yesBtn = el("button", { class: req.votes.my_vote === true ? "primary" : "secondary", text: "Yes" });
       const noBtn = el("button", { class: req.votes.my_vote === false ? "primary" : "secondary", text: "No" });
       const myVoteIndicator = el("p", { class: "lead" });
@@ -2373,9 +2376,9 @@ function toDateInputValue(d) {
 
 const REQUEST_STATUS_FILTER_OPTIONS = [
   ["", "All statuses"],
-  ["new", "New"], ["pending_approval", "Pending Approval"], ["approved", "Approved"], ["denied", "Denied"],
-  ["in_progress", "In Progress"], ["on_hold", "On Hold"],
-  ["completed", "Completed"], ["canceled", "Canceled"],
+  ["new", "New"], ["in_progress", "In Progress"], ["pending_approval", "Pending Approval"],
+  ["approved", "Approved"], ["on_hold", "On Hold"],
+  ["completed", "Completed"], ["denied", "Denied"], ["canceled", "Canceled"],
 ];
 
 async function renderRequestsAndVotesPage(onNavigate, onBack) {
