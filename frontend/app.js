@@ -2535,17 +2535,18 @@ async function renderCheckRegisterPage(onBack) {
 
       // Starting balance
       const startSection = el("section", { class: "cr-section" });
-      startSection.appendChild(el("h2", { text: "Starting balance" }));
+      const startFormWrap = el("div", { class: data.starting_date ? "hidden" : "" });
+      if (data.starting_date) {
+        const startTitleToggle = el("button", { class: "h2-toggle", text: "Starting balance" });
+        startTitleToggle.addEventListener("click", () => startFormWrap.classList.toggle("hidden"));
+        startSection.appendChild(startTitleToggle);
+      } else {
+        startSection.appendChild(el("h2", { text: "Starting balance" }));
+      }
       startSection.appendChild(el("p", { class: "lead", text: data.starting_date
         ? `Currently set to ${money(data.starting_balance)} as of ${formatDateDisplay(data.starting_date)}.`
         : "Not set yet \u2014 enter the initial donation balance to begin." }));
 
-      const startFormWrap = el("div", { class: data.starting_date ? "hidden" : "" });
-      if (data.starting_date) {
-        const startEditToggle = el("button", { class: "link-btn", text: "Edit starting balance" });
-        startEditToggle.addEventListener("click", () => startFormWrap.classList.toggle("hidden"));
-        startSection.appendChild(startEditToggle);
-      }
       const startBalanceInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
       const startDateInput = el("input", { type: "date" });
       const startBtn = el("button", { class: "secondary", text: "Set starting balance" });
@@ -2573,12 +2574,11 @@ async function renderCheckRegisterPage(onBack) {
 
       // Fiscal year budget
       const budgetSection = el("section", { class: "cr-section" });
-      budgetSection.appendChild(el("h2", { text: "Annual budget" }));
-      budgetSection.appendChild(el("p", { class: "lead", text: `FY${currentFy} budget: ${money(currentFyBudget)}. Subject to change each September 1.` }));
-      const budgetToggle = el("button", { class: "link-btn", text: "Edit budget" });
       const budgetFormWrap = el("div", { class: "hidden" });
-      budgetToggle.addEventListener("click", () => budgetFormWrap.classList.toggle("hidden"));
-      budgetSection.appendChild(budgetToggle);
+      const budgetTitleToggle = el("button", { class: "h2-toggle", text: "Annual budget" });
+      budgetTitleToggle.addEventListener("click", () => budgetFormWrap.classList.toggle("hidden"));
+      budgetSection.appendChild(budgetTitleToggle);
+      budgetSection.appendChild(el("p", { class: "lead", text: `FY${currentFy} budget: ${money(currentFyBudget)}. Subject to change each September 1.` }));
 
       const budgetYearInput = el("input", { type: "number", value: currentFy, placeholder: "Fiscal year" });
       const budgetAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
@@ -2607,11 +2607,10 @@ async function renderCheckRegisterPage(onBack) {
 
       // Income
       const incomeSection = el("section", { class: "cr-section" });
-      incomeSection.appendChild(el("h2", { text: "Record income" }));
-      const incomeToggle = el("button", { class: "link-btn", text: "Record a donation" });
       const incomeFormWrap = el("div", { class: "hidden" });
-      incomeToggle.addEventListener("click", () => incomeFormWrap.classList.toggle("hidden"));
-      incomeSection.appendChild(incomeToggle);
+      const incomeTitleToggle = el("button", { class: "h2-toggle", text: "Record income" });
+      incomeTitleToggle.addEventListener("click", () => incomeFormWrap.classList.toggle("hidden"));
+      incomeSection.appendChild(incomeTitleToggle);
 
       const incomeDateInput = el("input", { type: "date" });
       const incomeAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
@@ -2640,12 +2639,11 @@ async function renderCheckRegisterPage(onBack) {
 
       // Standalone expense (bank charges, fees — not tied to any request)
       const otherExpenseSection = el("section", { class: "cr-section" });
-      otherExpenseSection.appendChild(el("h2", { text: "Record other expense" }));
-      otherExpenseSection.appendChild(el("p", { class: "lead", text: "For bank charges, service fees, or anything else paid straight out of the account \u2014 not tied to a recipient's request." }));
-      const oeToggle = el("button", { class: "link-btn", text: "Record other expense" });
       const oeFormWrap = el("div", { class: "hidden" });
-      oeToggle.addEventListener("click", () => oeFormWrap.classList.toggle("hidden"));
-      otherExpenseSection.appendChild(oeToggle);
+      const oeTitleToggle = el("button", { class: "h2-toggle", text: "Record other expense" });
+      oeTitleToggle.addEventListener("click", () => oeFormWrap.classList.toggle("hidden"));
+      otherExpenseSection.appendChild(oeTitleToggle);
+      otherExpenseSection.appendChild(el("p", { class: "lead", text: "For bank charges, service fees, or anything else paid straight out of the account \u2014 not tied to a recipient's request." }));
 
       const oeDateInput = el("input", { type: "date" });
       const oeAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });

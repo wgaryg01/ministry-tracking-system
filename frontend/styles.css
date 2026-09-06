@@ -67,10 +67,27 @@ a { color: var(--slate-deep); }
 
 section + section { margin-top: 40px; padding-top: 32px; border-top: 1px solid var(--line); }
 .cr-section + .cr-section { margin-top: 16px; padding-top: 16px; }
-.cr-section h2 { margin-bottom: 8px; }
+.cr-section h2, .cr-section .h2-toggle { margin-bottom: 8px; }
 
 h1 { font-family: var(--font-display); font-weight: 600; font-size: 1.6rem; margin: 0 0 6px; }
 h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem; margin: 0 0 16px; }
+
+.h2-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.25rem;
+  color: var(--ink);
+  margin: 0 0 16px;
+}
+.h2-toggle:hover { color: var(--brass-deep); }
+.h2-toggle::after { content: " \25BE"; font-size: 0.9rem; color: var(--ink-soft); }
 p.lead { color: var(--ink-soft); margin: 0 0 24px; max-width: 52ch; }
 
 /* Forms */
