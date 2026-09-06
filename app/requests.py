@@ -1,7 +1,7 @@
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -15,7 +15,7 @@ from app.notifications import notify_team_of_new_request
 
 router = APIRouter(tags=["requests"])
 
-OPEN_STATUSES = {"new", "approved", "in_progress", "on_hold"}
+OPEN_STATUSES = {"new", "pending_approval", "approved", "in_progress", "on_hold"}
 RESOLVED_STATUSES = {"denied", "completed", "canceled"}
 
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024  # 10MB
@@ -29,17 +29,25 @@ def _document_type_allowed(content_type: str | None, filename: str) -> bool:
     if content_type in ALLOWED_DOCUMENT_TYPES:
         return True
     return filename.lower().endswith(ALLOWED_DOCUMENT_EXTENSIONS)
-VALID_REQUEST_STATUSES = {"new", "approved", "denied", "in_progress", "on_hold", "completed", "canceled"}
+VALID_REQUEST_STATUSES = {"new", "pending_approval", "approved", "denied", "in_progress", "on_hold", "completed", "canceled"}
 
 
 class AssistanceRequestCreate(BaseModel):
     assistance_type: str
     situation_description: str | None = None
     status: str = "new"
+    payment_method: str | None = None  # "check" | "credit_card"
     request_received_date: date_type | None = None  # defaults to today if not given
     helper_name: str | None = None
     helper_contact: str | None = None
     helper_relationship: str | None = None
+
+    @field_validator("payment_method")
+    @classmethod
+    def _validate_payment_method(cls, v):
+        if v is not None and v not in ("check", "credit_card"):
+            raise ValueError("payment_method must be 'check' or 'credit_card'")
+        return v
 
 
 class AssistanceRequestUpdate(AssistanceRequestCreate):
@@ -69,11 +77,14 @@ def create_request(
         encrypted_assistance_type=encrypt_field(payload.assistance_type),
         encrypted_situation_description=encrypt_field(payload.situation_description),
         status=payload.status,
+        payment_method=payload.payment_method,
         acknowledged_date=payload.request_received_date or date_type.today(),
         encrypted_helper_name=encrypt_field(payload.helper_name),
         encrypted_helper_contact=encrypt_field(payload.helper_contact),
         encrypted_helper_relationship=encrypt_field(payload.helper_relationship),
         created_by_user_id=current_user.id,
+        last_edited_by_user_id=current_user.id,
+        last_edited_at=datetime.utcnow(),
     )
     db.add(req)
     db.commit()
@@ -115,11 +126,14 @@ def update_request(
     req.encrypted_situation_description = encrypt_field(payload.situation_description)
     _validate_status(payload.status)
     req.status = payload.status
+    req.payment_method = payload.payment_method
     req.applicant_acknowledged = False
     req.acknowledged_date = payload.request_received_date or req.acknowledged_date
     req.encrypted_helper_name = encrypt_field(payload.helper_name)
     req.encrypted_helper_contact = encrypt_field(payload.helper_contact)
     req.encrypted_helper_relationship = encrypt_field(payload.helper_relationship)
+    req.last_edited_by_user_id = current_user.id
+    req.last_edited_at = datetime.utcnow()
     db.commit()
 
     log_audit_event(db, current_user.id, "request_updated", resource_type="assistance_request", resource_id=req.id)

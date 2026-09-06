@@ -104,6 +104,8 @@ def update_activity(
     activity.status = payload.status
     activity.scheduled_at = payload.scheduled_at
     activity.payment_approved = payload.payment_approved
+    activity.last_edited_by_user_id = current_user.id
+    activity.last_edited_at = datetime.utcnow()
     db.commit()
 
     # Keep an already-created register entry's payee name in sync —
@@ -151,6 +153,8 @@ def create_activity(
         scheduled_at=payload.scheduled_at,
         payment_approved=payload.payment_approved,
         logged_by_user_id=current_user.id,
+        last_edited_by_user_id=current_user.id,
+        last_edited_at=datetime.utcnow(),
     )
     db.add(activity)
     db.commit()
@@ -377,11 +381,14 @@ def set_payment_approval(
             activity_id=activity.id,
             category=activity.category,
             payee_name=activity.payee_name,
+            payment_method=req.payment_method if req else None,
             status="pending",
             created_by_user_id=current_user.id,
         ))
 
     activity.payment_approved = payload.payment_approved
+    activity.last_edited_by_user_id = current_user.id
+    activity.last_edited_at = datetime.utcnow()
     db.commit()
 
     log_audit_event(

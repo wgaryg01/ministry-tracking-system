@@ -128,6 +128,8 @@ class Identity(Base):
     search_hash = Column(String, nullable=True, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+    last_edited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    last_edited_at = Column(DateTime, nullable=True)
 
     addresses = relationship("Address", back_populates="identity", order_by="Address.effective_date")
     household_members = relationship("HouseholdMember", back_populates="identity")
@@ -179,6 +181,8 @@ class ActivityRecord(Base):
 
     logged_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    last_edited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    last_edited_at = Column(DateTime, nullable=True)
 
     assistance_request = relationship("AssistanceRequest", back_populates="activities")
     assignments = relationship("ActivityAssignment", back_populates="activity")
@@ -364,7 +368,8 @@ class AssistanceRequest(Base):
 
     encrypted_assistance_type = Column(LargeBinary, nullable=False)  # what kind of help is being asked for
     encrypted_situation_description = Column(LargeBinary, nullable=True)  # their situation, in their own words
-    status = Column(String, nullable=False, default="new")  # new | approved | denied | in_progress | on_hold | completed | canceled
+    status = Column(String, nullable=False, default="new")  # new | pending_approval | approved | denied | in_progress | on_hold | completed | canceled
+    payment_method = Column(String, nullable=True)  # "check" | "credit_card" — how the Financial Secretary should pay this out
 
     applicant_acknowledged = Column(Boolean, nullable=False, default=False)
     acknowledged_date = Column(Date, nullable=True)
@@ -376,6 +381,8 @@ class AssistanceRequest(Base):
 
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    last_edited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    last_edited_at = Column(DateTime, nullable=True)
 
     identity = relationship("Identity", back_populates="assistance_requests")
     activities = relationship("ActivityRecord", back_populates="assistance_request")
@@ -519,6 +526,7 @@ class CheckRegisterEntry(Base):
     activity_id = Column(UUID(as_uuid=True), ForeignKey("activity_records.id"), nullable=True)
     category = Column(String, nullable=True)  # non-PII — mirrors the linked activity's category, for expenses only
     payee_name = Column(String, nullable=True)  # who the check is written to — copied from the activity, editable here too
+    payment_method = Column(String, nullable=True)  # "check" | "credit_card" — copied from the parent request at approval time
     status = Column(String, nullable=False, default="pending")  # only meaningful for expenses: "pending" | "paid"
     date_paid = Column(Date, nullable=True)
     check_number = Column(String, nullable=True)

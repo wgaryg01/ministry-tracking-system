@@ -129,7 +129,7 @@ def _replay_ledger(db: Session) -> dict:
                 budget_used[fy] = round(budget_used.get(fy, 0.0) + from_budget, 2)
             transactions.append({
                 "id": str(e.id), "type": "expense", "date": e.date_paid.isoformat(),
-                "amount": amount, "category": e.category, "payee_name": e.payee_name, "check_number": e.check_number,
+                "amount": amount, "category": e.category, "payee_name": e.payee_name, "payment_method": e.payment_method, "check_number": e.check_number,
                 "running_balance": designated_balance, "from_budget": from_budget,
                 "last_edited_by": edited_by, "last_edited_at": edited_at,
                 "identity_id": activity_to_identity.get(str(e.activity_id)) if e.activity_id else None,
@@ -146,7 +146,7 @@ def _replay_ledger(db: Session) -> dict:
         "pending_expenses": [
             {
                 "id": str(e.id), "date": e.transaction_date.isoformat(),
-                "amount": float(e.amount), "category": e.category, "payee_name": e.payee_name,
+                "amount": float(e.amount), "category": e.category, "payee_name": e.payee_name, "payment_method": e.payment_method,
                 "last_edited_by": user_names.get(e.last_edited_by_user_id),
                 "last_edited_at": e.last_edited_at.isoformat() if e.last_edited_at else None,
                 "identity_id": activity_to_identity.get(str(e.activity_id)) if e.activity_id else None,
@@ -335,6 +335,7 @@ class ExpenseEntryUpdate(BaseModel):
     amount: float
     category: str | None = None
     payee_name: str | None = None
+    payment_method: str | None = None
     date_paid: date | None = None
     check_number: str | None = None
 
@@ -363,6 +364,7 @@ def update_expense(
     entry.amount = payload.amount
     entry.category = payload.category
     entry.payee_name = payload.payee_name.strip() if payload.payee_name else None
+    entry.payment_method = payload.payment_method
 
     if entry.status == "paid":
         if payload.date_paid is not None:

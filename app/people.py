@@ -13,7 +13,7 @@ from app.household import build_household_summary
 
 router = APIRouter(prefix="/people", tags=["people"])
 
-OPEN_STATUSES = {"new", "approved", "in_progress", "on_hold"}
+OPEN_STATUSES = {"new", "pending_approval", "approved", "in_progress", "on_hold"}
 RESOLVED_STATUSES = {"denied", "completed", "canceled"}
 
 
@@ -309,6 +309,11 @@ def get_person(
     if not identity:
         raise HTTPException(status_code=404, detail="Person not found")
 
+    # One batched lookup for "last edited by" names, rather than a
+    # query per record — attribution isn't recipient PII (it's who on
+    # the team touched it), so it's shown regardless of PII access.
+    user_names = {u.id: (u.full_name or u.email or u.username) for u in db.query(User).all()}
+
     grant_or_true = can_decrypt_pii(current_user, db)
     can_see_pii = bool(grant_or_true)
     elevation_grant = grant_or_true if grant_or_true is not True else None
@@ -398,6 +403,7 @@ def get_person(
                 "id": str(req.id),
                 "assistance_type": decrypt_field(req.encrypted_assistance_type),
                 "status": req.status,
+                "payment_method": req.payment_method,
                 "total_amount": total_amount,
                 "votes": vote_summary,
                 "situation_description": decrypt_field(req.encrypted_situation_description),
@@ -414,6 +420,7 @@ def get_person(
                 "id": str(req.id),
                 "assistance_type": None, "situation_description": None,
                 "status": req.status,
+                "payment_method": req.payment_method,
                 "total_amount": total_amount,
                 "votes": vote_summary,
                 "request_received_date": req.acknowledged_date.isoformat() if req.acknowledged_date else (req.created_at.date().isoformat() if req.created_at else None),

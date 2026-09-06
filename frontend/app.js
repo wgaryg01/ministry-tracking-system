@@ -1037,6 +1037,11 @@ function renderNewRequestForm(identityId, onCreated, onCancel) {
   const helperContactInput = el("input", { type: "text", placeholder: "Helper's phone or email" });
   const helperRelInput = el("input", { type: "text", placeholder: "Helper's relationship to applicant" });
   const paperFormField = buildAttachmentUploadField("Attach the intake paper form (if available)");
+  const paymentMethodSelect = el("select", {}, [
+    el("option", { value: "", text: "Not yet determined" }),
+    el("option", { value: "check", text: "Check" }),
+    el("option", { value: "credit_card", text: "Credit Card" }),
+  ]);
   const submitBtn = el("button", { class: "primary", text: "Create request" });
   const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
 
@@ -1054,6 +1059,7 @@ function renderNewRequestForm(identityId, onCreated, onCancel) {
           helper_name: helperNameInput.value || null,
           helper_contact: helperContactInput.value || null,
           helper_relationship: helperRelInput.value || null,
+          payment_method: paymentMethodSelect.value || null,
         }),
       });
       const paperFile = paperFormField.getFile();
@@ -1072,6 +1078,7 @@ function renderNewRequestForm(identityId, onCreated, onCancel) {
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Assistance requested" }), typeInput]));
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Situation" }), situationInput]));
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Request received date" }), receivedDateInput]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Payment method" }), paymentMethodSelect]));
   form.appendChild(paperFormField.root);
   form.appendChild(el("p", { class: "lead", text: "If someone helped complete this request:" }));
   form.appendChild(el("div", { class: "field-row" }, [
@@ -1127,7 +1134,7 @@ function renderDocumentUploadForm(requestId, onUploaded) {
 }
 
 const REQUEST_STATUS_OPTIONS = [
-  ["new", "New"], ["approved", "Approved"], ["denied", "Denied"],
+  ["new", "New"], ["pending_approval", "Pending Approval"], ["approved", "Approved"], ["denied", "Denied"],
   ["in_progress", "In Progress"], ["on_hold", "On Hold"],
   ["completed", "Completed"], ["canceled", "Canceled"],
 ];
@@ -1151,6 +1158,12 @@ function renderEditRequestForm(req, onSaved, onCancel) {
   helperContactInput.value = req.helper_contact || "";
   const helperRelInput = el("input", { type: "text", placeholder: "Helper's relationship to applicant" });
   helperRelInput.value = req.helper_relationship || "";
+  const paymentMethodSelect = el("select", {}, [
+    el("option", { value: "", text: "Not yet determined" }),
+    el("option", { value: "check", text: "Check" }),
+    el("option", { value: "credit_card", text: "Credit Card" }),
+  ]);
+  paymentMethodSelect.value = req.payment_method || "";
   const submitBtn = el("button", { class: "primary", text: "Save" });
   const cancelBtn = el("button", { class: "secondary", type: "button", text: "Cancel" });
 
@@ -1169,6 +1182,7 @@ function renderEditRequestForm(req, onSaved, onCancel) {
           helper_name: helperNameInput.value || null,
           helper_contact: helperContactInput.value || null,
           helper_relationship: helperRelInput.value || null,
+          payment_method: paymentMethodSelect.value || null,
         }),
       });
       // Update in place — no full-page refresh needed.
@@ -1178,6 +1192,7 @@ function renderEditRequestForm(req, onSaved, onCancel) {
       req.helper_name = helperNameInput.value || null;
       req.helper_contact = helperContactInput.value || null;
       req.helper_relationship = helperRelInput.value || null;
+      req.payment_method = paymentMethodSelect.value || null;
       if (onSaved) onSaved();
     } catch (err) {
       feedback.appendChild(msg(err.message, "error"));
@@ -1188,6 +1203,7 @@ function renderEditRequestForm(req, onSaved, onCancel) {
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Assistance requested" }), typeInput]));
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Situation" }), situationInput]));
   form.appendChild(el("div", { class: "field" }, [el("label", { text: "Request received date" }), receivedDateInput]));
+  form.appendChild(el("div", { class: "field" }, [el("label", { text: "Payment method" }), paymentMethodSelect]));
   form.appendChild(el("p", { class: "lead", text: "If someone helped complete this request:" }));
   form.appendChild(el("div", { class: "field-row" }, [
     el("div", { class: "field" }, [el("label", { text: "Helper name" }), helperNameInput]),
@@ -1308,6 +1324,7 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
       detailsWrap.innerHTML = "";
       detailsWrap.appendChild(el("dl", {}, [
         el("dt", { text: "Request received" }), el("dd", { text: req.request_received_date ? formatDateDisplay(req.request_received_date) : "\u2014" }),
+        el("dt", { text: "Payment method" }), el("dd", { text: req.payment_method === "check" ? "Check" : req.payment_method === "credit_card" ? "Credit Card" : "\u2014" }),
         el("dt", { text: "Helper" }), el("dd", { text: req.helper_name ? `${req.helper_name} \u2014 ${req.helper_contact || ""} (${req.helper_relationship || ""})` : "\u2014" }),
       ]));
     }
@@ -1378,10 +1395,9 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     body.appendChild(docSection);
   }
 
-  // Votes are always visible (not tucked behind a click) and sit
-  // structurally between the request details and the activities —
-  // this is a prompt, not something a member has to go looking for.
-  if (!isHidden) {
+  // Votes only apply during the Pending Approval phase — hidden
+  // entirely for every other status, not just when closed.
+  if (!isHidden && req.status === "pending_approval") {
     const voteSection = el("section");
     voteSection.appendChild(el("h2", { text: "Team vote" }));
 
@@ -2345,7 +2361,7 @@ function toDateInputValue(d) {
 
 const REQUEST_STATUS_FILTER_OPTIONS = [
   ["", "All statuses"],
-  ["new", "New"], ["approved", "Approved"], ["denied", "Denied"],
+  ["new", "New"], ["pending_approval", "Pending Approval"], ["approved", "Approved"], ["denied", "Denied"],
   ["in_progress", "In Progress"], ["on_hold", "On Hold"],
   ["completed", "Completed"], ["canceled", "Canceled"],
 ];
@@ -2711,7 +2727,8 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
           }
           const row = el("div", rowAttrs);
           row.appendChild(el("span", { class: "date", text: formatDateDisplay(p.date) }));
-          const categorySpan = el("span", { class: "category", text: p.category || "\u2014" });
+          const pmLabel = p.payment_method === "check" ? " (Check)" : p.payment_method === "credit_card" ? " (Credit Card)" : "";
+          const categorySpan = el("span", { class: "category", text: (p.category || "\u2014") + pmLabel });
           if (p.identity_id) {
             categorySpan.classList.add("clickable-row");
             categorySpan.addEventListener("click", () => onNavigate(p.identity_id));
@@ -2721,6 +2738,12 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
           const editAmountInput = el("input", { type: "number", step: "0.01", value: p.amount });
           const editCategoryInput = el("input", { type: "text", value: p.category || "" });
           const editPayeeInput = el("input", { type: "text", placeholder: "Who to make the check out to", value: p.payee_name || "" });
+          const editPaymentMethodSelect = el("select", {}, [
+            el("option", { value: "", text: "Not yet determined" }),
+            el("option", { value: "check", text: "Check" }),
+            el("option", { value: "credit_card", text: "Credit Card" }),
+          ]);
+          editPaymentMethodSelect.value = p.payment_method || "";
           const editSaveBtn = el("button", { class: "secondary", text: "Save changes" });
           const editFeedback = el("div");
           editSaveBtn.addEventListener("click", async () => {
@@ -2732,6 +2755,7 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
                   amount: parseFloat(editAmountInput.value),
                   category: editCategoryInput.value || null,
                   payee_name: editPayeeInput.value || null,
+                  payment_method: editPaymentMethodSelect.value || null,
                 }),
               });
               refresh();
@@ -2761,6 +2785,7 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
             el("div", { class: "field" }, [el("label", { text: "Amount" }), editAmountInput]),
             el("div", { class: "field" }, [el("label", { text: "Category" }), editCategoryInput]),
             el("div", { class: "field" }, [el("label", { text: "Pay to" }), editPayeeInput]),
+            el("div", { class: "field" }, [el("label", { text: "Payment method" }), editPaymentMethodSelect]),
             editSaveBtn,
           ]));
           wrap.appendChild(editFeedback);
@@ -2786,7 +2811,7 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
         ]);
         ledgerSection.appendChild(head);
         for (const [idx, t] of [...data.transactions].reverse().entries()) {
-          const label = t.type === "income" ? "Donation" : `${t.category || "Expense"}${t.payee_name ? " to " + t.payee_name : ""}${t.check_number ? " (Check #" + t.check_number + ")" : ""}`;
+          const label = t.type === "income" ? "Donation" : `${t.category || "Expense"}${t.payee_name ? " to " + t.payee_name : ""}${t.check_number ? " (Check #" + t.check_number + ")" : ""}${!t.check_number && t.payment_method === "credit_card" ? " (Credit Card)" : ""}`;
           const editToggle = el("button", { class: "link-btn", text: "Edit" });
           const rowAttrs = { class: "report-row" };
           if (t.last_edited_by) {
@@ -2834,6 +2859,12 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
             const amountInput = el("input", { type: "number", step: "0.01", value: t.amount });
             const categoryInput = el("input", { type: "text", value: t.category || "" });
             const payeeInput = el("input", { type: "text", value: t.payee_name || "" });
+            const paymentMethodSelect = el("select", {}, [
+              el("option", { value: "", text: "Not yet determined" }),
+              el("option", { value: "check", text: "Check" }),
+              el("option", { value: "credit_card", text: "Credit Card" }),
+            ]);
+            paymentMethodSelect.value = t.payment_method || "";
             const datePaidInput = el("input", { type: "date", value: t.date });
             const checkNumInput = el("input", { type: "text", value: t.check_number || "" });
             const saveBtn = el("button", { class: "secondary", text: "Save" });
@@ -2846,6 +2877,7 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
                     amount: parseFloat(amountInput.value),
                     category: categoryInput.value || null,
                     payee_name: payeeInput.value || null,
+                    payment_method: paymentMethodSelect.value || null,
                     date_paid: datePaidInput.value,
                     check_number: checkNumInput.value,
                   }),
@@ -2859,6 +2891,7 @@ async function renderCheckRegisterPage(onNavigate, onBack) {
               el("div", { class: "field" }, [el("label", { text: "Amount" }), amountInput]),
               el("div", { class: "field" }, [el("label", { text: "Category" }), categoryInput]),
               el("div", { class: "field" }, [el("label", { text: "Pay to" }), payeeInput]),
+              el("div", { class: "field" }, [el("label", { text: "Payment method" }), paymentMethodSelect]),
             ]));
             editBody.appendChild(el("div", { class: "field-row" }, [
               el("div", { class: "field" }, [el("label", { text: "Date paid" }), datePaidInput]),
