@@ -184,6 +184,90 @@ def add_income(
     return {"message": "Income recorded", "id": str(entry.id)}
 
 
+class IncomeUpdate(BaseModel):
+    transaction_date: date
+    amount: float
+
+
+@router.put("/income/{entry_id}")
+def update_income(
+    entry_id: str,
+    payload: IncomeUpdate,
+    current_user: User = Depends(require_role(Role.ADMIN, Role.FINANCIAL_SECRETARY)),
+    db: Session = Depends(get_db),
+):
+    entry = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.id == entry_id, CheckRegisterEntry.entry_type == "income").first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Income entry not found")
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+
+    old = f"date={entry.transaction_date} amount={entry.amount}"
+    entry.transaction_date = payload.transaction_date
+    entry.amount = payload.amount
+    db.commit()
+
+    log_audit_event(
+        db, current_user.id, "check_register_income_edited",
+        resource_type="check_register_entry", resource_id=entry.id,
+        details=f"{old} -> date={entry.transaction_date} amount={entry.amount}",
+    )
+
+    return {"message": "Income updated"}
+
+
+class ExpenseEntryUpdate(BaseModel):
+    amount: float
+    category: str | None = None
+    payee_name: str | None = None
+    date_paid: date | None = None
+    check_number: str | None = None
+
+
+@router.put("/expense/{entry_id}")
+def update_expense(
+    entry_id: str,
+    payload: ExpenseEntryUpdate,
+    current_user: User = Depends(require_role(Role.ADMIN, Role.FINANCIAL_SECRETARY)),
+    db: Session = Depends(get_db),
+):
+    """
+    General correction endpoint for an expense line — amount, category,
+    payee, and (if already paid) the date paid / check number. Works
+    whether the expense is still pending or already marked paid, since
+    mistakes get caught at either stage.
+    """
+    entry = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.id == entry_id, CheckRegisterEntry.entry_type == "expense").first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Expense entry not found")
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+
+    old = f"amount={entry.amount} category={entry.category} payee={entry.payee_name} date_paid={entry.date_paid} check_number={entry.check_number}"
+
+    entry.amount = payload.amount
+    entry.category = payload.category
+    entry.payee_name = payload.payee_name.strip() if payload.payee_name else None
+
+    if entry.status == "paid":
+        if payload.date_paid is not None:
+            entry.date_paid = payload.date_paid
+        if payload.check_number is not None:
+            if not payload.check_number.strip():
+                raise HTTPException(status_code=400, detail="Check number cannot be blank once marked paid")
+            entry.check_number = payload.check_number.strip()
+
+    db.commit()
+
+    log_audit_event(
+        db, current_user.id, "check_register_expense_edited",
+        resource_type="check_register_entry", resource_id=entry.id,
+        details=f"{old} -> amount={entry.amount} category={entry.category} payee={entry.payee_name} date_paid={entry.date_paid} check_number={entry.check_number}",
+    )
+
+    return {"message": "Expense updated"}
+
+
 class MarkPaidUpdate(BaseModel):
     date_paid: date
     check_number: str

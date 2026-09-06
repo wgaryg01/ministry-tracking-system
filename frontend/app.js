@@ -2596,19 +2596,25 @@ async function renderCheckRegisterPage(onBack) {
           row.appendChild(el("span", { class: "date", text: formatDateDisplay(p.date) }));
           row.appendChild(el("span", { class: "category", text: p.category || "\u2014" }));
           row.appendChild(el("span", { class: "amount", text: money(p.amount) }));
-          const payeeInput = el("input", { type: "text", placeholder: "Who to make the check out to", value: p.payee_name || "" });
-          const payeeSaveBtn = el("button", { class: "secondary", text: "Save payee" });
-          const payeeFeedback = el("div");
-          payeeSaveBtn.addEventListener("click", async () => {
-            payeeFeedback.innerHTML = "";
+          const editAmountInput = el("input", { type: "number", step: "0.01", value: p.amount });
+          const editCategoryInput = el("input", { type: "text", value: p.category || "" });
+          const editPayeeInput = el("input", { type: "text", placeholder: "Who to make the check out to", value: p.payee_name || "" });
+          const editSaveBtn = el("button", { class: "secondary", text: "Save changes" });
+          const editFeedback = el("div");
+          editSaveBtn.addEventListener("click", async () => {
+            editFeedback.innerHTML = "";
             try {
-              await api(`/check-register/expense/${p.id}/payee`, {
+              await api(`/check-register/expense/${p.id}`, {
                 method: "PUT",
-                body: JSON.stringify({ payee_name: payeeInput.value }),
+                body: JSON.stringify({
+                  amount: parseFloat(editAmountInput.value),
+                  category: editCategoryInput.value || null,
+                  payee_name: editPayeeInput.value || null,
+                }),
               });
-              payeeFeedback.appendChild(msg("Saved.", "success"));
+              refresh();
             } catch (err) {
-              payeeFeedback.appendChild(msg(err.message, "error"));
+              editFeedback.appendChild(msg(err.message, "error"));
             }
           });
           const dateePaidInput = el("input", { type: "date" });
@@ -2630,10 +2636,12 @@ async function renderCheckRegisterPage(onBack) {
           const wrap = el("div");
           wrap.appendChild(row);
           wrap.appendChild(el("div", { class: "field-row" }, [
-            el("div", { class: "field" }, [el("label", { text: "Pay to" }), payeeInput]),
-            payeeSaveBtn,
+            el("div", { class: "field" }, [el("label", { text: "Amount" }), editAmountInput]),
+            el("div", { class: "field" }, [el("label", { text: "Category" }), editCategoryInput]),
+            el("div", { class: "field" }, [el("label", { text: "Pay to" }), editPayeeInput]),
+            editSaveBtn,
           ]));
-          wrap.appendChild(payeeFeedback);
+          wrap.appendChild(editFeedback);
           wrap.appendChild(el("div", { class: "field-row" }, [dateePaidInput, checkNumInput, payBtn]));
           wrap.appendChild(payFeedback);
           pendingSection.appendChild(wrap);
@@ -2652,16 +2660,87 @@ async function renderCheckRegisterPage(onBack) {
           el("span", { class: "report-num", text: "Amount" }),
           el("span", { class: "report-num", text: "From budget" }),
           el("span", { class: "report-aid", text: "Balance" }),
+          el("span", { text: "" }),
         ]);
         ledgerSection.appendChild(head);
         for (const t of data.transactions) {
           const label = t.type === "income" ? "Donation" : `${t.category || "Expense"}${t.payee_name ? " to " + t.payee_name : ""}${t.check_number ? " (Check #" + t.check_number + ")" : ""}`;
-          ledgerSection.appendChild(el("div", { class: "report-row" }, [
+          const editToggle = el("button", { class: "link-btn", text: "Edit" });
+          const displayRow = el("div", { class: "report-row" }, [
             el("span", { class: "report-period", text: `${formatDateDisplay(t.date)} \u2014 ${label}` }),
             el("span", { class: "report-num", text: (t.type === "income" ? "+" : "-") + money(t.amount) }),
             el("span", { class: "report-num", text: t.from_budget > 0 ? money(t.from_budget) : "\u2014" }),
             el("span", { class: "report-aid", text: money(t.running_balance) }),
-          ]));
+            editToggle,
+          ]);
+
+          const editBody = el("div", { class: "hidden" });
+          editToggle.addEventListener("click", () => editBody.classList.toggle("hidden"));
+
+          const editFeedback = el("div");
+          if (t.type === "income") {
+            const dateInput = el("input", { type: "date", value: t.date });
+            const amountInput = el("input", { type: "number", step: "0.01", value: t.amount });
+            const saveBtn = el("button", { class: "secondary", text: "Save" });
+            saveBtn.addEventListener("click", async () => {
+              editFeedback.innerHTML = "";
+              try {
+                await api(`/check-register/income/${t.id}`, {
+                  method: "PUT",
+                  body: JSON.stringify({ transaction_date: dateInput.value, amount: parseFloat(amountInput.value) }),
+                });
+                refresh();
+              } catch (err) {
+                editFeedback.appendChild(msg(err.message, "error"));
+              }
+            });
+            editBody.appendChild(el("div", { class: "field-row" }, [
+              el("div", { class: "field" }, [el("label", { text: "Date" }), dateInput]),
+              el("div", { class: "field" }, [el("label", { text: "Amount" }), amountInput]),
+              saveBtn,
+            ]));
+          } else {
+            const amountInput = el("input", { type: "number", step: "0.01", value: t.amount });
+            const categoryInput = el("input", { type: "text", value: t.category || "" });
+            const payeeInput = el("input", { type: "text", value: t.payee_name || "" });
+            const datePaidInput = el("input", { type: "date", value: t.date });
+            const checkNumInput = el("input", { type: "text", value: t.check_number || "" });
+            const saveBtn = el("button", { class: "secondary", text: "Save" });
+            saveBtn.addEventListener("click", async () => {
+              editFeedback.innerHTML = "";
+              try {
+                await api(`/check-register/expense/${t.id}`, {
+                  method: "PUT",
+                  body: JSON.stringify({
+                    amount: parseFloat(amountInput.value),
+                    category: categoryInput.value || null,
+                    payee_name: payeeInput.value || null,
+                    date_paid: datePaidInput.value,
+                    check_number: checkNumInput.value,
+                  }),
+                });
+                refresh();
+              } catch (err) {
+                editFeedback.appendChild(msg(err.message, "error"));
+              }
+            });
+            editBody.appendChild(el("div", { class: "field-row" }, [
+              el("div", { class: "field" }, [el("label", { text: "Amount" }), amountInput]),
+              el("div", { class: "field" }, [el("label", { text: "Category" }), categoryInput]),
+              el("div", { class: "field" }, [el("label", { text: "Pay to" }), payeeInput]),
+            ]));
+            editBody.appendChild(el("div", { class: "field-row" }, [
+              el("div", { class: "field" }, [el("label", { text: "Date paid" }), datePaidInput]),
+              el("div", { class: "field" }, [el("label", { text: "Check #" }), checkNumInput]),
+              saveBtn,
+            ]));
+          }
+          editBody.appendChild(editFeedback);
+
+          const rowWrap = el("div");
+          rowWrap.appendChild(displayRow);
+          rowWrap.appendChild(editBody);
+          ledgerSection.appendChild(rowWrap);
         }
       }
       body.appendChild(ledgerSection);
