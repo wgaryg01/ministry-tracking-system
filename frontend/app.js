@@ -2585,6 +2585,55 @@ async function renderCheckRegisterPage(onBack) {
       incomeSection.appendChild(incomeFeedback);
       body.appendChild(incomeSection);
 
+      // Standalone expense (bank charges, fees — not tied to any request)
+      const otherExpenseSection = el("section");
+      otherExpenseSection.appendChild(el("h2", { text: "Record other expense" }));
+      otherExpenseSection.appendChild(el("p", { class: "lead", text: "For bank charges, service fees, or anything else paid straight out of the account \u2014 not tied to a recipient's request." }));
+      const oeDateInput = el("input", { type: "date" });
+      const oeAmountInput = el("input", { type: "number", step: "0.01", placeholder: "0.00" });
+      const oeCategoryInput = el("input", { type: "text", placeholder: "e.g. bank fee, service charge", required: "true" });
+      const oePayeeInput = el("input", { type: "text", placeholder: "Optional" });
+      const oeAlreadyPaidCb = el("input", { type: "checkbox" });
+      oeAlreadyPaidCb.checked = true;
+      const oeDatePaidInput = el("input", { type: "date" });
+      const oeCheckNumInput = el("input", { type: "text", placeholder: "Leave blank if auto-deducted (e.g. a bank fee)" });
+      const oeBtn = el("button", { class: "primary", text: "Record expense" });
+      const oeFeedback = el("div");
+      oeBtn.addEventListener("click", async () => {
+        oeFeedback.innerHTML = "";
+        try {
+          await api("/check-register/expense", {
+            method: "POST",
+            body: JSON.stringify({
+              transaction_date: oeDateInput.value,
+              amount: parseFloat(oeAmountInput.value),
+              category: oeCategoryInput.value,
+              payee_name: oePayeeInput.value || null,
+              already_paid: oeAlreadyPaidCb.checked,
+              date_paid: oeAlreadyPaidCb.checked ? (oeDatePaidInput.value || oeDateInput.value) : null,
+              check_number: oeAlreadyPaidCb.checked ? (oeCheckNumInput.value || null) : null,
+            }),
+          });
+          refresh();
+        } catch (err) {
+          oeFeedback.appendChild(msg(err.message, "error"));
+        }
+      });
+      otherExpenseSection.appendChild(el("div", { class: "field-row" }, [
+        el("div", { class: "field" }, [el("label", { text: "Date" }), oeDateInput]),
+        el("div", { class: "field" }, [el("label", { text: "Amount" }), oeAmountInput]),
+        el("div", { class: "field" }, [el("label", { text: "Category" }), oeCategoryInput]),
+      ]));
+      otherExpenseSection.appendChild(el("div", { class: "field" }, [el("label", { text: "Paid to (optional)" }), oePayeeInput]));
+      otherExpenseSection.appendChild(el("div", { class: "field" }, [el("label", { class: "checkbox-label" }, [oeAlreadyPaidCb, "Already paid \u2014 leave unchecked to record as pending (awaiting a check)"])]));
+      otherExpenseSection.appendChild(el("div", { class: "field-row" }, [
+        el("div", { class: "field" }, [el("label", { text: "Date paid (if different)" }), oeDatePaidInput]),
+        el("div", { class: "field" }, [el("label", { text: "Check # (optional)" }), oeCheckNumInput]),
+      ]));
+      otherExpenseSection.appendChild(oeBtn);
+      otherExpenseSection.appendChild(oeFeedback);
+      body.appendChild(otherExpenseSection);
+
       // Pending expenses awaiting payment
       const pendingSection = el("section");
       pendingSection.appendChild(el("h2", { text: "Pending expenses" }));

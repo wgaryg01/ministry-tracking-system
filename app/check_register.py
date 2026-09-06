@@ -153,6 +153,57 @@ def get_full_register(
     return _replay_ledger(db)
 
 
+class StandaloneExpenseCreate(BaseModel):
+    transaction_date: date
+    amount: float
+    category: str  # e.g. "bank fee", "service charge"
+    payee_name: str | None = None
+    already_paid: bool = True  # bank fees/auto-deductions are usually already gone by the time anyone enters them
+    date_paid: date | None = None  # required if already_paid
+    check_number: str | None = None  # optional — many of these (bank fees) have no check at all
+
+
+@router.post("/expense")
+def add_standalone_expense(
+    payload: StandaloneExpenseCreate,
+    current_user: User = Depends(require_role(Role.ADMIN, Role.FINANCIAL_SECRETARY)),
+    db: Session = Depends(get_db),
+):
+    """
+    An expense with no linked activity — bank charges, service fees,
+    or anything else paid straight out of the designated account
+    outside the normal request/approval workflow.
+    """
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+    if payload.already_paid and not payload.date_paid:
+        raise HTTPException(status_code=400, detail="Date paid is required for an already-paid expense")
+
+    entry = CheckRegisterEntry(
+        entry_type="expense",
+        amount=payload.amount,
+        transaction_date=payload.transaction_date,
+        activity_id=None,
+        category=payload.category,
+        payee_name=payload.payee_name,
+        status="paid" if payload.already_paid else "pending",
+        date_paid=payload.date_paid if payload.already_paid else None,
+        check_number=(payload.check_number.strip() or None) if payload.already_paid and payload.check_number else None,
+        created_by_user_id=current_user.id,
+        paid_by_user_id=current_user.id if payload.already_paid else None,
+    )
+    db.add(entry)
+    db.commit()
+
+    log_audit_event(
+        db, current_user.id, "check_register_standalone_expense_added",
+        resource_type="check_register_entry", resource_id=entry.id,
+        details=f"amount={payload.amount} category={payload.category} already_paid={payload.already_paid}",
+    )
+
+    return {"message": "Expense recorded", "id": str(entry.id)}
+
+
 class IncomeCreate(BaseModel):
     transaction_date: date
     amount: float
