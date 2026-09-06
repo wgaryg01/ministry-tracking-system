@@ -2469,15 +2469,36 @@ async function renderAccessLogsPage(onNavigate, onBack) {
   await refresh();
 }
 
+let _checkRegisterPresenceInterval = null;
+
 async function renderCheckRegisterPage(onBack) {
+  if (_checkRegisterPresenceInterval) { clearInterval(_checkRegisterPresenceInterval); _checkRegisterPresenceInterval = null; }
+  const wrappedOnBack = () => {
+    if (_checkRegisterPresenceInterval) { clearInterval(_checkRegisterPresenceInterval); _checkRegisterPresenceInterval = null; }
+    onBack();
+  };
+
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
-  backLink.addEventListener("click", onBack);
+  backLink.addEventListener("click", wrappedOnBack);
   main.appendChild(backLink);
 
   main.appendChild(el("h1", { text: "Check Register" }));
   const refreshBtn = el("button", { class: "secondary", text: "Refresh" });
   main.appendChild(refreshBtn);
+  const viewersLine = el("p", { class: "lead" });
+  main.appendChild(viewersLine);
+
+  async function sendHeartbeat() {
+    try {
+      const result = await api("/check-register/presence", { method: "POST" });
+      const myName = currentUser.full_name || currentUser.email || currentUser.username;
+      const others = result.viewers.filter((v) => v.name !== myName);
+      viewersLine.textContent = others.length > 0 ? `Also here now: ${others.map((v) => v.name).join(", ")}` : "";
+    } catch (err) { /* non-critical */ }
+  }
+  await sendHeartbeat();
+  _checkRegisterPresenceInterval = setInterval(sendHeartbeat, 15000);
 
   const body = el("div");
   main.appendChild(body);
@@ -2645,6 +2666,9 @@ async function renderCheckRegisterPage(onBack) {
           row.appendChild(el("span", { class: "date", text: formatDateDisplay(p.date) }));
           row.appendChild(el("span", { class: "category", text: p.category || "\u2014" }));
           row.appendChild(el("span", { class: "amount", text: money(p.amount) }));
+          const attribution = p.last_edited_by
+            ? el("div", { class: "lead", text: `Last edited by ${p.last_edited_by} on ${formatDateTimeDisplay(p.last_edited_at)}` })
+            : null;
           const editAmountInput = el("input", { type: "number", step: "0.01", value: p.amount });
           const editCategoryInput = el("input", { type: "text", value: p.category || "" });
           const editPayeeInput = el("input", { type: "text", placeholder: "Who to make the check out to", value: p.payee_name || "" });
@@ -2684,6 +2708,7 @@ async function renderCheckRegisterPage(onBack) {
           });
           const wrap = el("div");
           wrap.appendChild(row);
+          if (attribution) wrap.appendChild(attribution);
           wrap.appendChild(el("div", { class: "field-row" }, [
             el("div", { class: "field" }, [el("label", { text: "Amount" }), editAmountInput]),
             el("div", { class: "field" }, [el("label", { text: "Category" }), editCategoryInput]),
@@ -2788,6 +2813,9 @@ async function renderCheckRegisterPage(onBack) {
 
           const rowWrap = el("div");
           rowWrap.appendChild(displayRow);
+          if (t.last_edited_by) {
+            rowWrap.appendChild(el("div", { class: "lead", text: `Last edited by ${t.last_edited_by} on ${formatDateTimeDisplay(t.last_edited_at)}` }));
+          }
           rowWrap.appendChild(editBody);
           ledgerSection.appendChild(rowWrap);
         }

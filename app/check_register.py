@@ -1,16 +1,49 @@
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Role, CheckRegisterEntry, CheckRegisterStartingBalance, FiscalYearBudget
+from app.models import User, Role, CheckRegisterEntry, CheckRegisterStartingBalance, FiscalYearBudget, CheckRegisterPresence
 from app.auth import get_current_user
 from app.permissions import require_role
 from app.audit import log_audit_event
 
 router = APIRouter(prefix="/check-register", tags=["check-register"])
+
+PRESENCE_ACTIVE_SECONDS = 30
+
+
+@router.post("/presence")
+def check_register_heartbeat(
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER, Role.FINANCIAL_SECRETARY)),
+    db: Session = Depends(get_db),
+):
+    """15s heartbeat while the Check Register page is open — powers the 'who's here' list."""
+    presence = db.query(CheckRegisterPresence).filter(CheckRegisterPresence.user_id == current_user.id).first()
+    if presence:
+        presence.last_seen_at = datetime.utcnow()
+    else:
+        db.add(CheckRegisterPresence(user_id=current_user.id, last_seen_at=datetime.utcnow()))
+    db.commit()
+    return {"viewers": _current_viewers(db)}
+
+
+def _current_viewers(db: Session) -> list[dict]:
+    cutoff = datetime.utcnow() - timedelta(seconds=PRESENCE_ACTIVE_SECONDS)
+    rows = (
+        db.query(CheckRegisterPresence, User)
+        .join(User, CheckRegisterPresence.user_id == User.id)
+        .filter(CheckRegisterPresence.last_seen_at >= cutoff)
+        .all()
+    )
+    return [{"name": u.full_name or u.email or u.username, "last_seen_at": p.last_seen_at.isoformat()} for p, u in rows]
+
+
+def _touch_edited(db: Session, entry: CheckRegisterEntry, current_user: User) -> None:
+    entry.last_edited_by_user_id = current_user.id
+    entry.last_edited_at = datetime.utcnow()
 
 
 def fiscal_year_of(d: date) -> int:
@@ -36,6 +69,9 @@ def _replay_ledger(db: Session) -> dict:
 
     budgets = {b.fiscal_year: float(b.budget_amount) for b in db.query(FiscalYearBudget).all()}
 
+    # One batched lookup instead of a query per row for "last edited by".
+    user_names = {u.id: (u.full_name or u.email or u.username) for u in db.query(User).all()}
+
     income_entries = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.entry_type == "income").all()
     paid_expenses = (
         db.query(CheckRegisterEntry)
@@ -60,12 +96,15 @@ def _replay_ledger(db: Session) -> dict:
     for ev in events:
         e = ev["entry"]
         amount = float(e.amount)
+        edited_by = user_names.get(e.last_edited_by_user_id)
+        edited_at = e.last_edited_at.isoformat() if e.last_edited_at else None
         if ev["type"] == "income":
             designated_balance = round(designated_balance + amount, 2)
             transactions.append({
                 "id": str(e.id), "type": "income", "date": e.transaction_date.isoformat(),
                 "amount": amount, "category": None, "check_number": None,
                 "running_balance": designated_balance, "from_budget": 0.0,
+                "last_edited_by": edited_by, "last_edited_at": edited_at,
             })
         else:
             fy = fiscal_year_of(e.date_paid)
@@ -78,6 +117,7 @@ def _replay_ledger(db: Session) -> dict:
                 "id": str(e.id), "type": "expense", "date": e.date_paid.isoformat(),
                 "amount": amount, "category": e.category, "payee_name": e.payee_name, "check_number": e.check_number,
                 "running_balance": designated_balance, "from_budget": from_budget,
+                "last_edited_by": edited_by, "last_edited_at": edited_at,
             })
 
     return {
@@ -87,10 +127,13 @@ def _replay_ledger(db: Session) -> dict:
         "fiscal_year_budgets": budgets,
         "fiscal_year_budget_used": budget_used,
         "transactions": transactions,
+        "viewers": _current_viewers(db),
         "pending_expenses": [
             {
                 "id": str(e.id), "date": e.transaction_date.isoformat(),
                 "amount": float(e.amount), "category": e.category, "payee_name": e.payee_name,
+                "last_edited_by": user_names.get(e.last_edited_by_user_id),
+                "last_edited_at": e.last_edited_at.isoformat() if e.last_edited_at else None,
             }
             for e in pending_expenses
         ],
@@ -191,6 +234,8 @@ def add_standalone_expense(
         check_number=(payload.check_number.strip() or None) if payload.already_paid and payload.check_number else None,
         created_by_user_id=current_user.id,
         paid_by_user_id=current_user.id if payload.already_paid else None,
+        last_edited_by_user_id=current_user.id,
+        last_edited_at=datetime.utcnow(),
     )
     db.add(entry)
     db.commit()
@@ -223,6 +268,8 @@ def add_income(
         amount=payload.amount,
         transaction_date=payload.transaction_date,
         created_by_user_id=current_user.id,
+        last_edited_by_user_id=current_user.id,
+        last_edited_at=datetime.utcnow(),
     )
     db.add(entry)
     db.commit()
@@ -256,6 +303,7 @@ def update_income(
     old = f"date={entry.transaction_date} amount={entry.amount}"
     entry.transaction_date = payload.transaction_date
     entry.amount = payload.amount
+    _touch_edited(db, entry, current_user)
     db.commit()
 
     log_audit_event(
@@ -308,6 +356,7 @@ def update_expense(
                 raise HTTPException(status_code=400, detail="Check number cannot be blank once marked paid")
             entry.check_number = payload.check_number.strip()
 
+    _touch_edited(db, entry, current_user)
     db.commit()
 
     log_audit_event(
@@ -347,6 +396,7 @@ def update_payee_name(
 
     old_value = entry.payee_name
     entry.payee_name = payload.payee_name.strip() or None
+    _touch_edited(db, entry, current_user)
     db.commit()
 
     log_audit_event(
@@ -377,6 +427,7 @@ def mark_expense_paid(
     entry.date_paid = payload.date_paid
     entry.check_number = payload.check_number.strip()
     entry.paid_by_user_id = current_user.id
+    _touch_edited(db, entry, current_user)
     db.commit()
 
     log_audit_event(

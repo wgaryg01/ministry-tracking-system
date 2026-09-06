@@ -524,6 +524,8 @@ class CheckRegisterEntry(Base):
     check_number = Column(String, nullable=True)
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     paid_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    last_edited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    last_edited_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -559,3 +561,18 @@ class FiscalYearBudget(Base):
     budget_amount = Column(Numeric(10, 2), nullable=False)
     set_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CheckRegisterPresence(Base):
+    """
+    "Who's currently on the Check Register page" — one row per user,
+    updated on a 15s heartbeat while the page is open. Unlike
+    RecordPresence (per-recipient), there's only one check register,
+    so this is a flat one-row-per-user table rather than needing an
+    identity_id to scope against.
+    """
+    __tablename__ = "check_register_presence"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, unique=True)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
