@@ -1767,6 +1767,25 @@ function buildHouseholdIntakeSection() {
   return { root, getMembers: () => members };
 }
 
+function renderFinancialSecretaryIntakeFlow(onBack) {
+  renderNewPersonPage((newIdentityId) => {
+    main.innerHTML = "";
+    const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Cancel and return" });
+    backLink.addEventListener("click", onBack);
+    main.appendChild(backLink);
+    main.appendChild(el("h1", { text: "Add Their Request" }));
+    main.appendChild(el("p", { class: "lead", text: "Recipient saved. Now add the request they're asking about, and attach the paper intake form if you have it." }));
+    main.appendChild(renderNewRequestForm(newIdentityId, () => {
+      main.innerHTML = "";
+      main.appendChild(el("h1", { text: "Done" }));
+      main.appendChild(msg("Recipient and request created successfully. The team will take it from here.", "success"));
+      const doneBtn = el("button", { class: "primary", text: "Return to dashboard" });
+      doneBtn.addEventListener("click", onBack);
+      main.appendChild(doneBtn);
+    }, onBack));
+  }, onBack);
+}
+
 async function renderNewPersonPage(onCreated, onBack) {
   main.innerHTML = "";
   const backLink = el("button", { class: "link-btn back-link", text: "\u2190 Back to recipients" });
@@ -3134,17 +3153,19 @@ async function renderDashboard(user, org) {
     main.appendChild(section);
   }
   if (user.role === "financial_secretary") {
+    const newPersonBtn = el("button", { class: "secondary", text: "+ New recipient" });
+    newPersonBtn.addEventListener("click", () => renderFinancialSecretaryIntakeFlow(showList));
     const checkRegisterBtn = el("button", { class: "secondary", text: "Check Register" });
     checkRegisterBtn.addEventListener("click", () => renderCheckRegisterPage(showList));
+    const directory = await renderTeamDirectorySection();
     const myInfo = await myInfoFor();
     const section = el("section");
-    section.appendChild(el("div", { class: "button-row nav-row" }, [checkRegisterBtn, myInfo.toggle]));
+    section.appendChild(el("div", { class: "button-row nav-row" }, [newPersonBtn, checkRegisterBtn, directory.toggle, myInfo.toggle]));
+    section.appendChild(directory.body);
     section.appendChild(myInfo.body);
     main.appendChild(section);
   }
-  if (user.role !== "financial_secretary") {
-    main.appendChild(await renderPeopleSection(showDetail));
-  }
+  main.appendChild(await renderPeopleSection(showDetail));
 }
 
 // ---------- First-time account setup ----------

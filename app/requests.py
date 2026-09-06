@@ -55,7 +55,7 @@ def _validate_status(status: str):
 def create_request(
     identity_id: str,
     payload: AssistanceRequestCreate,
-    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER, Role.FINANCIAL_SECRETARY)),
     db: Session = Depends(get_db),
 ):
     identity = db.query(Identity).filter(Identity.id == identity_id).first()
@@ -131,7 +131,7 @@ def update_request(
 async def upload_document(
     request_id: str,
     file: UploadFile = File(...),
-    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER, Role.FINANCIAL_SECRETARY)),
     db: Session = Depends(get_db),
 ):
     req = db.query(AssistanceRequest).filter(AssistanceRequest.id == request_id).first()

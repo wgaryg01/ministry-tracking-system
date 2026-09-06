@@ -101,7 +101,7 @@ def _address_out(a: Address) -> dict:
 @router.post("")
 def create_identity(
     payload: IdentityCreate,
-    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER, Role.FINANCIAL_SECRETARY)),
     db: Session = Depends(get_db),
 ):
     identity = Identity(
@@ -207,7 +207,7 @@ def record_address_change(
 def add_household_member(
     identity_id: str,
     payload: HouseholdMemberCreate,
-    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.TEAMMEMBER, Role.FINANCIAL_SECRETARY)),
     db: Session = Depends(get_db),
 ):
     if payload.member_type not in ("child", "adult"):
