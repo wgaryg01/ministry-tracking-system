@@ -345,20 +345,23 @@ def set_payment_approval(
     """
     A lightweight, single-purpose toggle so approving/unapproving an
     amount for payment doesn't require resubmitting the whole activity
-    form — matches the row-level checkbox in the UI. Approving creates
-    a pending expense line in the check register for the Financial
-    Secretary to pay from the designated account. Once that entry has
-    actually been paid, un-approving requires the Financial Secretary
-    (or admin) to explicitly confirm the check won't be distributed —
-    a teammember can no longer just uncheck it.
+    form — matches the row-level checkbox in the UI. Only usable while
+    the parent request's status is exactly "Approved" — the workflow
+    is: vote it to Approved, the Financial Secretary marks activities
+    paid from there, then the request moves on to Completed. Approving
+    creates a pending expense line in the check register for the
+    Financial Secretary to pay from the designated account. Once that
+    entry has actually been paid, un-approving requires the Financial
+    Secretary (or admin) to explicitly confirm the check won't be
+    distributed — a teammember can no longer just uncheck it.
     """
     activity = db.query(ActivityRecord).filter(ActivityRecord.id == activity_id).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
 
     req = db.query(AssistanceRequest).filter(AssistanceRequest.id == activity.assistance_request_id).first()
-    if req and req.status in ("denied", "completed", "canceled"):
-        raise HTTPException(status_code=400, detail="This request is closed \u2014 payment approval can no longer be changed")
+    if req and req.status != "approved":
+        raise HTTPException(status_code=400, detail="Payment approval can only be changed while the request's status is Approved")
 
     existing_entry = db.query(CheckRegisterEntry).filter(CheckRegisterEntry.activity_id == activity.id).first()
 

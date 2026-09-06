@@ -125,6 +125,12 @@ def update_request(
     req.encrypted_assistance_type = encrypt_field(payload.assistance_type)
     req.encrypted_situation_description = encrypt_field(payload.situation_description)
     _validate_status(payload.status)
+
+    if payload.status == "approved" and req.status != "approved":
+        total_votes = db.query(RequestVote).filter(RequestVote.assistance_request_id == req.id).count()
+        if total_votes < 4:
+            raise HTTPException(status_code=400, detail=f"At least 4 votes are required before a request can be Approved (currently {total_votes})")
+
     req.status = payload.status
     req.payment_method = payload.payment_method
     req.applicant_acknowledged = False

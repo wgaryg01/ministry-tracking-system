@@ -933,7 +933,7 @@ async function renderEditActivityForm(activity, onSaved, onCancel) {
   return wrap;
 }
 
-function renderActivityRow(a, canEdit, onSaved, requestClosed) {
+function renderActivityRow(a, canEdit, onSaved, requestClosed, canApprovePayment) {
   const wrap = el("div");
   const statusSuffix = a.status && a.status !== "completed" ? ` \u2014 ${a.status}${a.scheduled_at ? " for " + formatDateTimeDisplay(a.scheduled_at) : ""}` : "";
   const amountText = a.amount_spent != null
@@ -945,9 +945,9 @@ function renderActivityRow(a, canEdit, onSaved, requestClosed) {
   if (canEdit && a.amount_spent != null) {
     const approveCb = el("input", { type: "checkbox" });
     approveCb.checked = a.payment_approved;
-    if (requestClosed) {
+    if (!canApprovePayment) {
       approveCb.setAttribute("disabled", "true");
-      approveCb.title = "This request is closed \u2014 payment approval can no longer be changed";
+      approveCb.title = "Payment approval can only be changed while the request's status is Approved";
     }
     approveCb.addEventListener("change", async () => {
       approveCb.setAttribute("disabled", "true");
@@ -1509,11 +1509,12 @@ async function renderRequestCard(req, identityId, isHidden, onChanged) {
     activitySection.appendChild(el("h2", { text: "Activity" }));
     const list = el("div", { class: "ledger" });
     const requestClosed = ["denied", "completed", "canceled"].includes(req.status);
+    const canApprovePayment = req.status === "approved";
     if (req.activities.length === 0) {
       list.appendChild(el("div", { class: "empty-state", text: "No activity logged yet." }));
     } else {
       for (const a of req.activities) {
-        list.appendChild(renderActivityRow(a, canEdit(), onChanged, requestClosed));
+        list.appendChild(renderActivityRow(a, canEdit(), onChanged, requestClosed, canApprovePayment));
       }
     }
     activitySection.appendChild(list);
